@@ -1,0 +1,223 @@
+"""5.0 MCP 工具目录按凭据过滤，调用再次授权；传输会话绑定主体。"""
+import time
+from typing import Any
+
+import anyio
+from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
+from mcp.server.transport_security import TransportSecurityMiddleware, TransportSecuritySettings
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+from memory_center.core.foundation.catalog import CatalogError
+from memory_center.platform.call_traces import observe_mcp_call, observe_transport, current_trace, span
+
+
+class ScopedMCP(FastMCP):
+    platform = None
+
+    def actor(self):
+        if self.service_config.auth_mode == 'local':
+            return self.platform.administrator()
+        request = self.get_context().request_context.request
+        header = request.headers.get('authorization', '') if request else ''
+        token = header[7:] if header.startswith('Bearer ') else ''
+        return self.platform.access.authenticate(token)
+
+    async def list_tools(self):
+        actor = self.actor()
+        return [tool for tool in await super().list_tools() if tool.name in actor.tools]
+
+    def caller_metadata(self):
+        context=self.get_context().request_context
+        request=context.request if context else None
+        params=context.session.client_params if context else None
+        info=params.clientInfo if params else None
+        import hashlib
+        session=request.headers.get('mcp-session-id','') if request else ''
+        return {'actor':'unverified', 'auth_mode':self.service_config.auth_mode,
+                'identity_assurance':'local_unverified' if self.service_config.auth_mode=='local' else 'unverified',
+                'client':str(info.name)[:200] if info else 'unknown', 'client_version':str(info.version)[:100] if info else '',
+                'client_identity':'self_reported', 'peer':request.client.host if request and request.client else '',
+                'transport_session_hash':hashlib.sha256(session.encode()).hexdigest()[:24] if session else ''}
+
+    @observe_mcp_call
+    async def call_tool(self, name, arguments):
+        try:
+            with span('authorize'):
+                actor=self.actor()
+                record=current_trace.get()
+                if record:
+                    record['actor']=actor.id;record['caller']['actor']=actor.id
+                    record['caller']['identity_assurance']='local_unverified' if self.service_config.auth_mode=='local' else 'anonymous' if actor.id=='anonymous' else 'credential'
+                if name not in actor.tools:
+                    raise CatalogError('FORBIDDEN','工具不在当前凭据授权范围内')
+            with span('tool.execute'):
+                await anyio.to_thread.run_sync(lambda:self.platform.call_traces.checkpoint(record))
+                result=await super().call_tool(name,arguments)
+            # 兼容既有审计，记录故障不改变已经成功的业务结果。
+            try:
+                with span('audit'):
+                    await anyio.to_thread.run_sync(lambda:self.platform.store.audit(actor.id,name,arguments.get('workspace_id',''),arguments.get('session_id',arguments.get('job_id',''))))
+            except Exception:
+                self.platform.call_traces.dropped+=1
+            return result
+        except CatalogError as exc:
+            raise ToolError(exc.code+'：'+exc.message) from None
+
+
+def register_tools(mcp):
+    from memory_center.service.governance_mcp import register_governance
+    register_governance(mcp)
+
+    def service():
+        return mcp.platform
+
+    @mcp.tool()
+    def mc_workspaces() -> dict[str, Any]:
+        """列出当前凭据可访问的项目，不提供管理员路径登记操作。"""
+        actor = mcp.actor()
+        items = []
+        for workspace_id in actor.workspaces:
+            try:
+                workspace = service().catalog.get(workspace_id)
+                items.append({key: workspace[key] for key in ['workspace_id', 'name', 'status', 'services']})
+            except CatalogError:
+                pass
+        return {'items': items}
+
+    @mcp.tool()
+    async def mc_lookup(workspace_id: str, query: str, mode: str = 'hybrid', limit: int = 10, session_id: str = '') -> dict[str, Any]:
+        """按显式项目查询：keyword/vector/hybrid/symbol/callers/callees/context，返回来源与私有引用。"""
+        if len(query) > 1000 or not 1 <= limit <= 50:
+            raise CatalogError('QUERY_INVALID', '查询参数超出范围')
+        return await anyio.to_thread.run_sync(lambda: service().lookup(mcp.actor(), workspace_id, query, mode, limit, session_id))
+
+    @mcp.tool()
+    async def mc_analyze(workspace_id: str, target: str) -> dict[str, Any]:
+        """在授权项目的代码事实图上查询影响，向量相似度不参与调用关系判定。"""
+        actor = mcp.actor()
+        if not target or len(target) > 1000:
+            raise CatalogError('QUERY_INVALID', '目标无效')
+        return await anyio.to_thread.run_sync(lambda: service().analyze(actor, workspace_id, target))
+
+    @mcp.tool()
+    def mc_start(workspace_id: str, intent: str) -> dict[str, Any]:
+        """创建绑定当前主体和项目的任务会话。"""
+        return service().access.start(mcp.actor(), workspace_id, intent)
+
+    @mcp.tool()
+    def mc_resume(session_id: str) -> dict[str, Any]:
+        """恢复当前凭据拥有的任务会话，并返回接续契约（能否续、续不上从哪继续）。"""
+        return service().resume(mcp.actor(), session_id)
+
+    @mcp.tool()
+    def mc_close(session_id: str, outcome: str) -> dict[str, Any]:
+        """关闭当前凭据拥有的任务会话并记录结果。"""
+        return service().access.close(mcp.actor(), session_id, outcome)
+
+    @mcp.tool()
+    def mc_ref(ref_id: str) -> dict[str, Any]:
+        """读取当前主体拥有的来源引用；空间和来源修订必须仍有效。"""
+        return service().resolve_reference(mcp.actor(), ref_id)
+
+    @mcp.tool()
+    def mc_memory_write(workspace_id: str, content: str, confirmed: bool = False) -> dict[str, Any]:
+        """写入长期记忆；推断默认待确认，明确事实可声明 confirmed。"""
+        actor = mcp.actor()
+        service().access.scope(actor, workspace_id, True)
+        if not content or len(content) > 10000:
+            raise CatalogError('MEMORY_INVALID', '记忆长度需介于 1–10000')
+        return service().knowledge.memory(actor.id, workspace_id, content, confirmed)
+
+    @mcp.tool()
+    def mc_wiki_write(workspace_id: str, title: str, content: str, record_id: str = '', revision: int = 0) -> dict[str, Any]:
+        """创建或修订 Wiki；更新要求当前 revision，保留版本历史。"""
+        actor = mcp.actor()
+        service().access.scope(actor, workspace_id, True)
+        if not title or len(title) > 200 or len(content) > 200000:
+            raise CatalogError('WIKI_INVALID', 'Wiki 内容超出范围')
+        return service().knowledge.wiki(actor.id, workspace_id, title, content, record_id,
+                                         revision if record_id else None)
+
+    @mcp.tool()
+    def mc_index(workspace_id: str) -> dict[str, Any]:
+        """启动授权项目的后台索引，返回持久 job_id；最多并行两个 Worker。"""
+        actor = mcp.actor()
+        service().access.scope(actor, workspace_id, True)
+        return service().jobs.enqueue(workspace_id, actor.id)
+
+    @mcp.tool()
+    def mc_job_status(job_id: str) -> dict[str, Any]:
+        """读取当前主体拥有的后台任务。"""
+        return service().access.owned(mcp.actor(), 'job', job_id)
+
+    @mcp.tool()
+    def mc_job_cancel(job_id: str) -> dict[str, Any]:
+        """取消当前主体的后台任务，取消 generation 不发布。"""
+        actor = mcp.actor()
+        job = service().access.owned(actor, 'job', job_id)
+        service().access.scope(actor, job['workspace_id'], True)
+        return service().jobs.cancel(job_id)
+
+
+class MCPBoundary:
+    def __init__(self, app, mcp):
+        self.app, self.mcp = app, mcp
+        self.bindings, self.rates = {}, {}
+
+    @observe_transport
+    async def __call__(self, scope, receive, send):
+        if scope['type'] != 'http':
+            return await self.app(scope, receive, send)
+        request = Request(scope)
+        try:
+            config = self.mcp.service_config
+            security = TransportSecurityMiddleware(TransportSecuritySettings(
+                enable_dns_rebinding_protection=True,
+                allowed_hosts=list(config.allowed_hosts),
+                allowed_origins=[f'http://{host}' for host in config.allowed_hosts],
+            ))
+            rejection = await security.validate_request(request, is_post=request.method == 'POST')
+            if rejection:
+                return await rejection(scope, receive, send)
+            if request.headers.get('origin') and request.headers['origin'] != f"{request.url.scheme}://{request.headers.get('host')}":
+                return await JSONResponse({'error': {'code': 'REQUEST_ORIGIN_REJECTED'}}, 403)(scope, receive, send)
+            header = request.headers.get('authorization', '')
+            if config.auth_mode == 'token' and header and not header.startswith('Bearer '):
+                raise CatalogError('UNAUTHORIZED', '需要 Bearer 凭据')
+            actor = self.mcp.platform.administrator() if config.auth_mode == 'local' else self.mcp.platform.access.authenticate(header[7:] if header else '')
+            session_id = request.headers.get('mcp-session-id')
+            if session_id and self.bindings.get(session_id) != actor.id:
+                raise CatalogError('FORBIDDEN', '传输会话不属于当前主体或已失效')
+            window = int(time.time() / 60)
+            key = actor.id
+            if len(self.rates) > 1100:
+                self.rates = {k: v for k, v in self.rates.items() if v[0] == window}
+            old_window, count = self.rates.get(key, (window, 0))
+            count = count + 1 if old_window == window else 1
+            if config.auth_mode == 'local':
+                rate = float('inf')
+            elif actor.id == 'anonymous':
+                rate = 120
+            else:
+                rate = self.mcp.platform.store.get('credential', actor.id)['rate']
+            self.rates[key] = (window, count)
+            if count > rate:
+                return await JSONResponse({'error': {'code': 'RATE_LIMITED', 'message': '凭据请求速率已达上限'}}, 429)(scope, receive, send)
+            if not session_id and len(self.bindings) >= 1000:
+                return await JSONResponse({'error': {'code': 'SESSION_LIMIT', 'message': '传输会话已达上限'}}, 429)(scope, receive, send)
+        except CatalogError as exc:
+            status = 401 if exc.code == 'UNAUTHORIZED' else 403
+            return await JSONResponse({'error': {'code': exc.code, 'message': exc.message}}, status)(scope, receive, send)
+
+        async def bind(message):
+            if message['type'] == 'http.response.start':
+                headers = dict(message.get('headers', []))
+                sid = headers.get(b'mcp-session-id')
+                if sid and message['status'] < 400:
+                    self.bindings[sid.decode()] = actor.id
+                if request.method == 'DELETE' and message['status'] < 400 and session_id:
+                    self.bindings.pop(session_id, None)
+            await send(message)
+        await self.app(scope, receive, bind)

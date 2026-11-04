@@ -1,0 +1,1292 @@
+from __future__ import annotations
+
+import copy
+import json
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
+from typing import Any
+
+from memory_center.core.governance.registry import resolve_group
+
+from .query import (
+    _query_node_priority,
+    _sort_target_types,
+    memory_callees,
+    memory_callers,
+    memory_query_hybrid,
+    memory_symbol,
+)
+from .ranking import (
+    _rrf,
+    tokenize,
+)
+from .shared import (
+    _build_progressive_levels,
+    _unknown_static_analysis_risks,
+    load_context,
+)
+
+
+def group_status(group: str, home: str | Path | None = None) -> dict[str, Any]:
+    from .workspace_ops import workspace_status
+
+    resolved = _cached_resolve_group(group, home)
+    workspaces: list[dict[str, Any]] = []
+    totals: dict[str, int] = {"files": 0, "symbols": 0, "apis": 0, "feigns": 0, "mq": 0, "cases": 0}
+    semantic_ready = 0
+    semantic_backends: dict[str, int] = {}
+    group_data = _load_group_data(resolved["members"])
+
+    def _load_status(member: dict[str, Any]) -> dict[str, Any]:
+        return workspace_status(member["workspace_file"])
+
+    with ThreadPoolExecutor(max_workers=min(max(len(resolved["members"]), 1), 4)) as pool:
+        statuses = list(pool.map(_load_status, resolved["members"]))
+
+    for status in statuses:
+        workspaces.append(status)
+        for key, value in status.get("index_counts", {}).items():
+            totals[key] = totals.get(key, 0) + int(value)
+        semantic = status.get("semantic_index", {})
+        if semantic.get("ready"):
+            semantic_ready += 1
+        backend = semantic.get("backend", "unknown")
+        semantic_backends[backend] = semantic_backends.get(backend, 0) + 1
+    bridges = _build_group_bridges(group_data)
+    return {
+        "group": group,
+        "workspace_count": len(workspaces),
+        "missing_members": resolved["missing"],
+        "index_totals": totals,
+        "semantic_index": {
+            "ready_workspace_count": semantic_ready,
+            "workspace_count": len(workspaces),
+            "doc_count": totals.get("semantic_docs", 0),
+            "ready": semantic_ready == len(workspaces) if workspaces else False,
+            "backends": semantic_backends,
+        },
+        "bridge_counts": _count_bridges(bridges),
+        "bridges": bridges[:50],
+        "workspaces": workspaces,
+    }
+
+
+def group_query(
+    group: str,
+    query: str,
+    limit: int = 20,
+    node_types: list[str] | None = None,
+    home: str | Path | None = None,
+) -> dict[str, Any]:
+    resolved = _cached_resolve_group(group, home)
+    group_data = _load_group_data(resolved["members"])
+    bridges = _build_group_bridges(group_data)
+    workspace_results: list[dict[str, Any]] = []
+    merged: dict[str, dict[str, Any]] = {}
+    target_types = set()
+
+    def _query_member(member: dict[str, Any]) -> dict[str, Any]:
+        return memory_query_hybrid(member["workspace_file"], query, limit=limit, node_types=node_types)
+
+    with ThreadPoolExecutor(max_workers=min(max(len(resolved["members"]), 1), 4)) as pool:
+        query_results = list(pool.map(_query_member, resolved["members"]))
+
+    if len(resolved["members"]) != len(query_results):
+        raise RuntimeError("group query result count does not match member count")
+    for member, result in zip(resolved["members"], query_results):  # noqa: B905 - lengths validated above
+        workspace_ref = member["name"]
+        workspace_name = result.get("workspace", workspace_ref)
+        workspace_results.append({
+            "workspace_ref": workspace_ref,
+            "workspace": workspace_name,
+            "workspace_file": member["workspace_file"],
+            "result": result,
+        })
+        for rank, item in enumerate(result.get("results", []), start=1):
+            node = item.get("node", {})
+            if node.get("type"):
+                target_types.add(node.get("type"))
+            node_id = node.get("id") or f"{node.get('type', 'unknown')}:{node.get('name', 'unknown')}:{workspace_ref}:{rank}"
+            key = f"{workspace_ref}:{node_id}"
+            current = merged.setdefault(key, {
+                "workspace_ref": workspace_ref,
+                "workspace": workspace_name,
+                "node": node,
+                "neighbors": item.get("neighbors", []),
+                "rrf_score": 0.0,
+                "semantic_score": 0.0,
+                "best_rank": rank,
+                "retrieval_sources": [],
+            })
+            current["rrf_score"] += float(item.get("exact_score", _rrf(rank)))
+            current["semantic_score"] = max(current["semantic_score"], float(item.get("semantic_score", 0.0)))
+            current["best_rank"] = min(current["best_rank"], rank)
+            if "exact" not in current["retrieval_sources"]:
+                current["retrieval_sources"].append("exact")
+
+    for entry in workspace_results:
+        for hit in entry["result"].get("semantic_hits", []):
+            _merge_group_semantic_hit(merged, entry["workspace_ref"], entry["workspace"], hit, entry["result"].get("matches", []), target_types)
+
+    resolved_target_types = _resolve_group_target_types(query, sorted(t for t in target_types if t))
+    merged_all = sorted(merged.values(), key=lambda item: _group_query_match_key(item, resolved_target_types))
+    merged_matches = merged_all[:limit]
+    bridges = _sort_bridges(_filter_bridges(bridges, query, limit), resolved_target_types)
+
+    return {
+        "group": group,
+        "query": query,
+        "workspace_count": len(workspace_results),
+        "missing_members": resolved["missing"],
+        "merged_matches": merged_matches,
+        "retrieval_summary": _summarize_group_query_matches(merged_all, limit),
+        "progressive": _build_group_query_progressive_view(group, query, merged_matches, bridges, workspace_results, limit),
+        "target_types": resolved_target_types,
+        "related_bridges": bridges,
+        "workspace_results": workspace_results,
+        "top_bridges": bridges[:5],
+        "bridge_reasons": [_bridge_reason_for(bridge) for bridge in bridges[:5]],
+        "cross_workspace_path_hint": _build_cross_workspace_path_hint(merged_matches),
+    }
+
+
+def group_impact(
+    group: str,
+    target: str,
+    direction: str = "upstream",
+    max_depth: int = 3,
+    home: str | Path | None = None,
+) -> dict[str, Any]:
+    from .impact import memory_impact
+
+    group_data = _load_group_data(_cached_resolve_group(group, home).get("members", []))
+    if not group_data:
+        return {
+            "group": group,
+            "target": target,
+            "direction": direction,
+            "found": False,
+            "risk_level": "unknown",
+            "impacted_workspaces": [],
+            "confirmed_impacts": [],
+            "probable_impacts": [],
+            "possible_impacts": [],
+            "impacts": [],
+            "related_bridges": [],
+            "lookup": {"query": target, "retrieval_summary": {"exact_matches": 0, "semantic_matches": 0, "total_matches": 0}, "entrypoints": []},
+            "progressive": _build_group_impact_progressive_view(group, target, [], [], []),
+            "unknown_risks": _unknown_static_analysis_risks(),
+        }
+
+    target_types = _resolve_group_target_types(target)
+    all_impacts: list[dict[str, Any]] = []
+    workspace_refs: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+
+    for member in group_data:
+        workspace_file = member.get("workspace_file", "")
+        name = member.get("name", "")
+        workspace_refs.append({"name": name, "workspace": member.get("workspace", "")})
+        try:
+            impact = memory_impact(workspace_file, target, direction=direction, max_depth=max_depth)
+            if impact.get("found"):
+                for category, label in [
+                    ("confirmed_impacts", "confirmed"),
+                    ("probable_impacts", "probable"),
+                    ("possible_impacts", "possible"),
+                ]:
+                    for item in impact.get(category, []):
+                        all_impacts.append({
+                            **item,
+                            "_workspace": name,
+                            "_workspace_file": workspace_file,
+                            "_confidence_band": label,
+                        })
+        except Exception as exc:
+            errors.append({"name": name, "workspace_file": workspace_file, "error": str(exc)})
+
+    bridges = _build_group_bridges(group_data, query=target, limit=50)
+    impact_bridges = _filter_impact_bridges(bridges, target, target_types, limit=50)
+    sorted_bridges = _sort_bridges(impact_bridges, target_types)
+
+    filtered_records = _filter_group_impact_records(all_impacts, target_types)
+    # Exclude non-call edges like CONTAINS, DECLARES that don't represent real impact
+    filtered_records = [r for r in filtered_records if r.get("type", "") not in {"CONTAINS", "DECLARES"}]
+    sorted_records = _sort_group_impact_records(filtered_records, target_types)
+
+    impacted_projects = sorted({
+        item.get("source", {}).get("project", "") or item.get("_workspace", "")
+        for item in sorted_records
+        if item.get("source", {}).get("project") or item.get("_workspace")
+    })
+    high_risk_types = {"DTO", "Field", "FeignClient", "FeignMethod", "MQTopic", "MQConsumer", "Endpoint", "ConfigKey"}
+    has_high_risk = any(
+        item.get("source", {}).get("type", "") in high_risk_types
+        or item.get("target", {}).get("type", "") in high_risk_types
+        for item in sorted_records
+    )
+    if has_high_risk or len(impacted_projects) >= 3:
+        risk_level = "high"
+    elif sorted_records:
+        risk_level = "medium"
+    else:
+        risk_level = "low"
+
+    evidence_summary = _build_group_impact_evidence_summary(sorted_records, sorted_bridges)
+
+    # Split impacts by confidence band, wrapping each in {kind, impact} structure
+    confirmed_impacts = [_wrap_graph_impact(item, "confirmed") for item in sorted_records if item.get("_confidence_band") == "confirmed"]
+    probable_impacts = [_wrap_graph_impact(item, "probable") for item in sorted_records if item.get("_confidence_band") == "probable"]
+    possible_impacts = [_wrap_graph_impact(item, "possible") for item in sorted_records if item.get("_confidence_band") == "possible"]
+
+    impacted_workspaces = sorted({
+        item.get("_workspace", "")
+        for item in sorted_records
+        if item.get("_workspace")
+    })
+
+    # Build lookup payload from merged per-workspace queries
+    lookup_entries: list[dict[str, Any]] = []
+    for member in group_data:
+        try:
+            member_lookup = memory_query_hybrid(member.get("workspace_file", ""), target, limit=5)
+            for match in member_lookup.get("results", []):
+                lookup_entries.append({
+                    "node": match.get("node", {}),
+                    "retrieval_sources": match.get("retrieval_sources", []),
+                    "exact_score": match.get("exact_score", match.get("rrf_score", 0.0)),
+                    "semantic_score": match.get("semantic_score", 0.0),
+                    "workspace_ref": member.get("name", ""),
+                    "workspace": member.get("workspace", ""),
+                })
+        except Exception:
+            continue
+    lookup_payload = {
+        "query": target,
+        "retrieval_summary": {
+            "exact_matches": sum(1 for item in lookup_entries if "exact" in item.get("retrieval_sources", [])),
+            "semantic_matches": sum(1 for item in lookup_entries if "semantic" in item.get("retrieval_sources", [])),
+            "total_matches": len(lookup_entries),
+        },
+        "entrypoints": lookup_entries,
+    }
+
+    return {
+        "group": group,
+        "target": target,
+        "direction": direction,
+        "max_depth": max_depth,
+        "found": bool(sorted_records or sorted_bridges),
+        "risk_level": risk_level,
+        "impacted_projects": impacted_projects,
+        "impacted_workspaces": impacted_workspaces,
+        "target_types": target_types,
+        "confirmed_impacts": confirmed_impacts,
+        "probable_impacts": probable_impacts,
+        "possible_impacts": possible_impacts,
+        "impacts": sorted_records[:50],
+        "related_bridges": sorted_bridges[:30],
+        "evidence_summary": evidence_summary,
+        "lookup": lookup_payload,
+        "progressive": _build_group_impact_progressive_view(group, target, sorted_records, workspace_refs, sorted_bridges, impacted_workspaces),
+        "unknown_risks": _unknown_static_analysis_risks(),
+        "errors": errors,
+        "top_bridges": sorted_bridges[:5],
+        "bridge_reasons": [_bridge_reason_for(bridge) for bridge in sorted_bridges[:5]],
+        "cross_workspace_path_hint": ", ".join(impacted_workspaces[:5]),
+    }
+
+
+# ---- private helpers: data loading -----------------------------------------
+
+
+def _wrap_graph_impact(record: dict[str, Any], band: str) -> dict[str, Any]:
+    return {
+        "kind": "graph",
+        "impact": {
+            "type": record.get("type", ""),
+            "source": record.get("source", {}),
+            "target": record.get("target", {}),
+        },
+        "confidence": float(record.get("confidence", 0)),
+        "_workspace": record.get("_workspace", ""),
+        "_confidence_band": band,
+    }
+
+
+def _load_group_data(members: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not members:
+        return []
+
+    cache_key = tuple(sorted(member.get("workspace_file", "") for member in members))
+    now = time.monotonic()
+    _clear_expired_group_caches()
+    cached = _LOAD_GROUP_DATA_CACHE.get(cache_key)
+    if cached and (now - cached[0]) < _LOAD_GROUP_DATA_TTL_SECONDS:
+        return copy.deepcopy(cached[1])
+
+    loaded: list[dict[str, Any]] = []
+    for member in members:
+        workspace_file = member.get("workspace_file", "")
+        name = member.get("name", "")
+        if not workspace_file:
+            continue
+        try:
+            config, store = load_context(workspace_file)
+            loaded.append({
+                "name": name,
+                "workspace_ref": name,
+                "workspace": config.workspace,
+                "workspace_file": str(workspace_file),
+                "services": [s.__dict__ for s in config.services],
+                "feigns": store.read_json_prefer_backend("feign-index.json", []),
+                "apis": store.read_json_prefer_backend("api-index.json", []),
+                "mq": store.read_json_prefer_backend("mq-index.json", []),
+                "configs": store.read_json_prefer_backend("config-index.json", []),
+            })
+        except Exception:
+            continue
+
+    _LOAD_GROUP_DATA_CACHE[cache_key] = (now, copy.deepcopy(loaded))
+    return loaded
+
+
+def _build_group_bridges(group_data: list[dict[str, Any]], **_kwargs: Any) -> list[dict[str, Any]]:
+    bridges: list[dict[str, Any]] = []
+    service_targets: dict[str, list[dict[str, Any]]] = {}
+    apis: list[dict[str, Any]] = []
+    mq_topics: dict[str, list[dict[str, Any]]] = {}
+    config_keys: dict[str, list[dict[str, Any]]] = {}
+    config_values: dict[str, list[dict[str, Any]]] = {}
+
+    for item in group_data:
+        for svc in item["services"]:
+            for key in {svc.get("name"), svc.get("service_name")}:
+                if key:
+                    service_targets.setdefault(str(key), []).append({"workspace_ref": item["workspace_ref"], "workspace": item["workspace"], "service": svc})
+        for api in item["apis"]:
+            apis.append({"workspace_ref": item["workspace_ref"], "workspace": item["workspace"], **api})
+        for mq in item["mq"]:
+            mq_topics.setdefault(mq.get("topic", ""), []).append({"workspace_ref": item["workspace_ref"], "workspace": item["workspace"], **mq})
+        for cfg in item["configs"]:
+            for key, value in cfg.get("values", {}).items():
+                entry = {"workspace_ref": item["workspace_ref"], "workspace": item["workspace"], "project": cfg.get("project"), "path": cfg.get("path"), "key": key, "value": value}
+                config_keys.setdefault(key, []).append(entry)
+                config_values.setdefault(value, []).append(entry)
+
+    for item in group_data:
+        for feign in item["feigns"]:
+            target_service = feign.get("target_service")
+            for target in service_targets.get(target_service, []):
+                bridges.append({
+                    "type": "FEIGN_SERVICE",
+                    "confidence": 0.95,
+                    "source_workspace": item["workspace_ref"],
+                    "source_workspace_name": item["workspace"],
+                    "source_project": feign.get("project"),
+                    "source_file": feign.get("file"),
+                    "target_workspace": target["workspace_ref"],
+                    "target_workspace_name": target["workspace"],
+                    "target_project": target["service"].get("name"),
+                    "target_file": "",
+                    "summary": f"{feign.get('interface')} -> {target_service}",
+                    "evidence": {"target_service": target_service, "feign": feign.get("interface")},
+                })
+            for method in feign.get("methods", []):
+                for api in apis:
+                    if method.get("http_method") == api.get("http_method") and method.get("path") == api.get("path"):
+                        bridges.append({
+                            "type": "FEIGN_ENDPOINT",
+                            "confidence": 0.88,
+                            "source_workspace": item["workspace_ref"],
+                            "source_workspace_name": item["workspace"],
+                            "source_project": feign.get("project"),
+                            "source_file": feign.get("file"),
+                            "target_workspace": api.get("workspace_ref"),
+                            "target_workspace_name": api.get("workspace"),
+                            "target_project": api.get("project"),
+                            "target_file": api.get("file"),
+                            "summary": f"{feign.get('interface')}.{method.get('method_name')} -> {api.get('http_method')} {api.get('path')}",
+                            "evidence": {"path": api.get("path"), "http_method": api.get("http_method")},
+                        })
+
+    for topic, consumers in mq_topics.items():
+        if not topic:
+            continue
+        for consumer in consumers:
+            for cfg in config_values.get(topic, []):
+                bridges.append({
+                    "type": "MQ_TOPIC_CONFIG",
+                    "confidence": 0.84,
+                    "source_workspace": cfg.get("workspace_ref"),
+                    "source_workspace_name": cfg.get("workspace"),
+                    "source_project": cfg.get("project"),
+                    "source_file": cfg.get("path"),
+                    "target_workspace": consumer.get("workspace_ref"),
+                    "target_workspace_name": consumer.get("workspace"),
+                    "target_project": consumer.get("project"),
+                    "target_file": consumer.get("file"),
+                    "summary": f"{cfg.get('key')} = {topic} -> consumer {consumer.get('class_name')}",
+                    "evidence": {"topic": topic, "config_key": cfg.get("key")},
+                })
+        if len(consumers) >= 2:
+            primary = consumers[0]
+            for other in consumers[1:]:
+                bridges.append({
+                    "type": "MQ_TOPIC_SHARED",
+                    "confidence": 0.72,
+                    "source_workspace": primary.get("workspace_ref"),
+                    "source_workspace_name": primary.get("workspace"),
+                    "source_project": primary.get("project"),
+                    "source_file": primary.get("file"),
+                    "target_workspace": other.get("workspace_ref"),
+                    "target_workspace_name": other.get("workspace"),
+                    "target_project": other.get("project"),
+                    "target_file": other.get("file"),
+                    "summary": f"shared topic {topic}",
+                    "evidence": {"topic": topic},
+                })
+
+    for key, entries in config_keys.items():
+        if len(entries) < 2:
+            continue
+        primary = entries[0]
+        for other in entries[1:]:
+            bridges.append({
+                "type": "CONFIG_KEY_SHARED",
+                "confidence": 0.66,
+                "source_workspace": primary.get("workspace_ref"),
+                "source_workspace_name": primary.get("workspace"),
+                "source_project": primary.get("project"),
+                "source_file": primary.get("path"),
+                "target_workspace": other.get("workspace_ref"),
+                "target_workspace_name": other.get("workspace"),
+                "target_project": other.get("project"),
+                "target_file": other.get("path"),
+                "summary": f"shared config key {key}",
+                "evidence": {"config_key": key, "values": [primary.get('value'), other.get('value')]},
+            })
+
+    deduped: dict[str, dict[str, Any]] = {}
+    for bridge in bridges:
+        key = "|".join([
+            bridge.get("type", ""),
+            bridge.get("source_workspace", ""),
+            bridge.get("source_project", ""),
+            bridge.get("target_workspace", ""),
+            bridge.get("target_project", ""),
+            bridge.get("summary", ""),
+        ])
+        deduped[key] = bridge
+    return list(deduped.values())
+
+
+def _count_bridges(bridges: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for bridge in bridges:
+        bridge_type = bridge.get("type", "unknown")
+        counts[bridge_type] = counts.get(bridge_type, 0) + 1
+    return counts
+
+
+def _filter_bridges(bridges: list[dict[str, Any]], query: str, limit: int) -> list[dict[str, Any]]:
+    if not bridges:
+        return []
+    query_tokens = set(tokenize(query))
+    matched = []
+    for bridge in bridges:
+        haystack = json.dumps(bridge, ensure_ascii=False).lower()
+        if any(token in haystack for token in query_tokens):
+            matched.append(bridge)
+    matched.sort(key=lambda item: (-float(item.get("confidence", 0)), item.get("summary", "")))
+    return matched[:limit]
+
+
+def _filter_impact_bridges(
+    bridges: list[dict[str, Any]],
+    target: str,
+    target_types: list[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    if not bridges:
+        return []
+    target_lower = target.lower()
+    target_tokens = set(tokenize(target))
+    matched: list[dict[str, Any]] = []
+    for bridge in bridges:
+        bridge_type = bridge.get("type", "")
+        summary_lower = (bridge.get("summary", "") or "").lower()
+        # Match by bridge type falling into target_types categories
+        bridge_category = _bridge_type_category(bridge_type)
+        if target_lower in summary_lower or any(token in summary_lower for token in target_tokens):
+            matched.append({**bridge, "_match_kind": "token"})
+            continue
+        if bridge_category in target_types:
+            matched.append({**bridge, "_match_kind": "type_token"})
+            continue
+    matched.sort(key=lambda item: (
+        0 if item.get("_match_kind") == "exact_name" else 1 if item.get("_match_kind") == "type_token" else 2,
+        -float(item.get("confidence", 0.0)),
+    ))
+    return matched[:limit]
+
+
+def _bridge_type_category(bridge_type: str) -> str:
+    category_map = {
+        "FEIGN_SERVICE": "FeignClient",
+        "FEIGN_ENDPOINT": "Endpoint",
+        "MQ_TOPIC_CONFIG": "MQTopic",
+        "MQ_TOPIC_SHARED": "MQTopic",
+        "CONFIG_KEY_SHARED": "ConfigKey",
+    }
+    return category_map.get(bridge_type, "")
+
+
+def _bridge_types_for_target(bridge: dict[str, Any], target_types: list[str]) -> str:
+    bridge_type = bridge.get("type", "")
+    category = _bridge_type_category(bridge_type)
+    if category in target_types:
+        return category
+    return bridge_type if bridge_type in target_types else "other"
+
+
+def _sort_bridges(bridges: list[dict[str, Any]], target_types: list[str]) -> list[dict[str, Any]]:
+    return sorted(bridges, key=lambda item: _bridge_sort_key(item, target_types))
+
+
+def _bridge_sort_key(bridge: dict[str, Any], target_types: list[str]) -> tuple:
+    bridge_type = bridge.get("type", "")
+    priority = _bridge_priority(bridge_type, target_types)
+    type_order = _bridge_type_order(bridge_type)
+    confidence = float(bridge.get("confidence", 0.0))
+    return (
+        priority,
+        type_order,
+        -confidence,
+        bridge.get("summary", ""),
+    )
+
+
+def _bridge_type_order(bridge_type: str) -> int:
+    order = {
+        "FEIGN_ENDPOINT": 0, "FEIGN_SERVICE": 1,
+        "MQ_TOPIC_CONFIG": 0, "MQ_TOPIC_SHARED": 1,
+        "CONFIG_KEY_SHARED": 0,
+    }
+    return order.get(bridge_type, 10)
+
+
+def _bridge_priority(bridge_type: str, target_types: list[str]) -> int:
+    priority_map: dict[str, int] = {}
+    types = set(target_types)
+    if {"FeignClient", "FeignMethod", "Endpoint"} & types:
+        priority_map.update({"FEIGN_ENDPOINT": 0, "FEIGN_SERVICE": 1, "FeignClient": 2, "FeignMethod": 3, "Endpoint": 4, "Class": 5, "Method": 6, "File": 7})
+    if {"MQTopic", "MQConsumer"} & types:
+        priority_map.update({"MQ_TOPIC_CONFIG": 0, "MQ_TOPIC_SHARED": 1, "MQTopic": 2, "MQConsumer": 3, "ConfigKey": 4, "Class": 5, "File": 6})
+    if "ConfigKey" in types:
+        priority_map.update({"CONFIG_KEY_SHARED": 0, "ConfigKey": 1, "Class": 2, "File": 3})
+    if not priority_map:
+        priority_map.update({"Class": 0, "Method": 1, "Field": 2, "File": 3})
+    if bridge_type in priority_map:
+        return priority_map[bridge_type]
+    return priority_map.get("other", 20)
+
+
+def _resolve_group_target_types(target: str, target_types: list[str] | None = None) -> list[str]:
+    return _sort_target_types(list(_infer_target_types(target)))
+
+
+def _infer_target_types(target: str) -> set:
+    resolved: set = set()
+    target_lower = target.lower()
+    # Hyphenated names that don't look like service/app names are likely topics/queues
+    service_indicators = {"service", "api", "common", "gateway", "server", "app", "web", "ui", "frontend", "backend", "admin", "portal"}
+    hyphen_like = "-" in target_lower and not any(ind in target_lower for ind in service_indicators)
+    topic_like = hyphen_like or any(token in target_lower for token in ["topic", "kafka", "rocketmq", "consumer", "producer", "listener"])
+    if "feign" in target_lower:
+        resolved.update({"FeignClient", "FeignMethod"})
+    if target_lower.startswith("/") or any(token in target_lower for token in ["controller", "endpoint"]):
+        resolved.add("Endpoint")
+    if topic_like:
+        resolved.add("MQTopic")
+    if "." in target_lower and not topic_like and "feign" not in target_lower and not target_lower.startswith("/"):
+        resolved.add("ConfigKey")
+    if topic_like and "MQTopic" in resolved:
+        resolved.discard("ConfigKey")
+    return resolved
+
+
+def _group_query_match_key(item: dict[str, Any], target_types: list[str]) -> tuple:
+    node = item.get("node", {})
+    node_type = node.get("type", "") or item.get("node_type", "")
+    priority = _query_node_priority(node_type, target_types)
+    sources = set(item.get("retrieval_sources", []))
+    hybrid_rank = 0 if {"exact", "semantic"} <= sources else 1 if "exact" in sources else 2 if "semantic" in sources else 3
+    return (
+        priority,
+        hybrid_rank,
+        -float(item.get("rrf_score", item.get("exact_score", 0.0))),
+        -float(item.get("semantic_score", 0.0)),
+        int(item.get("best_rank", 9999)),
+        node.get("name", "") or item.get("node_name", ""),
+    )
+
+
+def _find_group_query_neighbors(workspace_matches: list[dict[str, Any]], node_id: str) -> list[dict[str, Any]]:
+    for match in workspace_matches:
+        match_node_id = match.get("node_id", "") or match.get("node", {}).get("id", "")
+        if match_node_id == node_id:
+            return match.get("neighbors", [])
+    return []
+
+
+def _merge_group_semantic_hit(
+    merged: dict[str, dict[str, Any]],
+    workspace_ref: str,
+    workspace_name: str,
+    hit: dict[str, Any],
+    workspace_matches: list[dict[str, Any]],
+    target_types: list[str],
+) -> None:
+    node_id = hit.get("node_id", "")
+    if not node_id:
+        return
+    node = hit.get("node", {})
+    key = f"{workspace_name}:{node_id}"
+    existing = merged.get(key)
+    if existing:
+        existing["semantic_score"] = max(existing.get("semantic_score", 0.0), float(hit.get("score", 0.0)))
+        if workspace_name not in existing.get("seen_in_workspaces", []):
+            existing.setdefault("seen_in_workspaces", []).append(workspace_name)
+        return
+    neighbors = _find_group_query_neighbors(workspace_matches, node_id)
+    merged[key] = {
+        "workspace_ref": workspace_ref,
+        "workspace": workspace_name,
+        "node": node,
+        "neighbors": neighbors,
+        "exact_score": 0.0,
+        "semantic_score": float(hit.get("score", 0.0)),
+        "best_rank": 1000,
+        "retrieval_sources": ["semantic"],
+        "seen_in_workspaces": [workspace_name],
+    }
+
+
+def _summarize_group_query_matches(matches: list[dict[str, Any]], limit: int) -> dict[str, int]:
+    summary = {"exact_matches": 0, "semantic_matches": 0, "hybrid_matches": 0, "total_matches": len(matches), "returned_matches": min(len(matches), limit)}
+    for item in matches:
+        sources = set(item.get("retrieval_sources", []))
+        if "exact" in sources:
+            summary["exact_matches"] += 1
+        if "semantic" in sources:
+            summary["semantic_matches"] += 1
+        if {"exact", "semantic"} <= sources:
+            summary["hybrid_matches"] += 1
+    return summary
+
+
+def _build_group_query_progressive_view(
+    group: str,
+    query: str,
+    merged_matches: list[dict[str, Any]],
+    bridges: list[dict[str, Any]],
+    workspace_results: list[dict[str, Any]],
+    limit: int,
+) -> dict[str, Any]:
+    top_nodes = [item.get("node", {}) for item in merged_matches[:3]]
+    return _build_progressive_levels(
+        {
+            "group": group,
+            "query": query,
+            "workspace_count": len(workspace_results),
+            "top_nodes": [f"{item.get('type', '')}:{item.get('name', '')}" for item in top_nodes if item.get("name")],
+        },
+        {
+            "entrypoints": [
+                {
+                    "workspace_ref": item.get("workspace_ref", ""),
+                    "type": item.get("node", {}).get("type", ""),
+                    "name": item.get("node", {}).get("name", ""),
+                    "retrieval_sources": item.get("retrieval_sources", []),
+                    "rrf_score": item.get("rrf_score", 0.0),
+                    "semantic_score": item.get("semantic_score", 0.0),
+                }
+                for item in merged_matches[: min(limit, 5)]
+            ],
+            "bridge_preview": [
+                {
+                    "type": item.get("type", ""),
+                    "summary": item.get("summary", ""),
+                    "confidence": item.get("confidence", 0.0),
+                }
+                for item in bridges[:5]
+            ],
+        },
+        {
+            "workspace_breakdown": [
+                {
+                    "workspace_ref": item.get("workspace_ref", ""),
+                    "workspace": item.get("workspace", ""),
+                    "top_match_count": len(item.get("result", {}).get("matches", [])),
+                    "retrieval_summary": item.get("result", {}).get("retrieval_summary", {}),
+                }
+                for item in workspace_results
+            ],
+            "neighbor_preview": {
+                item.get("node", {}).get("name", ""): [edge.get("type", "") for edge in item.get("neighbors", [])[:4]]
+                for item in merged_matches[:3]
+            },
+        },
+    )
+
+
+def _build_group_impact_progressive_view(
+    group: str,
+    target: str,
+    impact_records: list[dict[str, Any]],
+    workspace_refs: list[dict[str, Any]],
+    bridges: list[dict[str, Any]] | None = None,
+    impacted_workspaces: list[str] | None = None,
+) -> dict[str, Any]:
+    bridges = bridges or []
+    impacted_workspaces = impacted_workspaces or []
+    confirmed_count = sum(1 for item in impact_records if item.get("_confidence_band") == "confirmed")
+    probable_count = sum(1 for item in impact_records if item.get("_confidence_band") == "probable")
+    possible_count = sum(1 for item in impact_records if item.get("_confidence_band") == "possible")
+    workspace_names = sorted({
+        item.get("_workspace", "")
+        for item in impact_records
+        if item.get("_workspace")
+    })
+    return _build_progressive_levels(
+        {
+            "group": group,
+            "target": target,
+            "member_count": len(workspace_refs),
+            "total_impacts": len(impact_records),
+            "impacted_workspace_count": len(workspace_names),
+            "impacted_workspaces": workspace_names,
+        },
+        {
+            "confirmed_count": confirmed_count,
+            "probable_count": probable_count,
+            "possible_count": possible_count,
+            "workspaces_queried": [ref.get("name", "") for ref in workspace_refs],
+            "type_distribution": _type_distribution_from_impacts(impact_records),
+            "top_bridges": [
+                {
+                    "type": item.get("type", ""),
+                    "summary": item.get("summary", ""),
+                    "confidence": item.get("confidence", 0.0),
+                }
+                for item in bridges[:5]
+            ],
+        },
+        {
+            "impacted_workspaces": workspace_names,
+            "next_action": "Inspect each impacted workspace individually with memory_context and memory_impact.",
+            "impact_preview": [
+                _group_impact_record_label(item)
+                for item in impact_records[:8]
+            ],
+        },
+    )
+
+
+def _group_impact_record_label(item: dict[str, Any]) -> str:
+    source = item.get("source", {})
+    target_node = item.get("target", {})
+    edge_type = item.get("type", "")
+    workspace = item.get("_workspace", "")
+    band = item.get("_confidence_band", "")
+    source_name = source.get("name", "")
+    target_name = target_node.get("name", "")
+    if source_name and target_name:
+        return f"[{workspace}] {source_name} --{edge_type}--> {target_name} ({band})"
+    if source_name:
+        return f"[{workspace}] {source_name} ({band})"
+    if target_name:
+        return f"[{workspace}] {target_name} ({band})"
+    return f"[{workspace}] {edge_type} ({band})"
+
+
+def _build_group_impact_evidence_summary(
+    impact_records: list[dict[str, Any]],
+    bridges: list[dict[str, Any]],
+) -> dict[str, Any]:
+    confirmed = sum(1 for item in impact_records if item.get("_confidence_band") == "confirmed")
+    probable = sum(1 for item in impact_records if item.get("_confidence_band") == "probable")
+    possible = sum(1 for item in impact_records if item.get("_confidence_band") == "possible")
+    edge_types = sorted({
+        item.get("type", "")
+        for item in impact_records
+        if item.get("type")
+    })
+    bridge_types_set = sorted({
+        item.get("type", "")
+        for item in bridges
+        if item.get("type")
+    })
+    combined_types = sorted(set(edge_types) | set(bridge_types_set))
+    bridge_workspaces = sorted({item.get("source_workspace_name", "") or item.get("workspace_name", "") for item in bridges if (item.get("source_workspace_name", "") or item.get("workspace_name", ""))})
+    return {
+        "confirmed_count": confirmed,
+        "probable_count": probable,
+        "possible_count": possible,
+        "bridge_types": combined_types,
+        "bridge_evidence_count": len(bridges),
+        "bridge_workspaces": bridge_workspaces,
+    }
+
+
+def _filter_group_impact_records(
+    records: list[dict[str, Any]],
+    target_types: list[str],
+) -> list[dict[str, Any]]:
+    if not target_types:
+        return records
+    type_set = set(target_types)
+    filtered: list[dict[str, Any]] = []
+    for record in records:
+        source_type = record.get("source", {}).get("type", "")
+        target_type = record.get("target", {}).get("type", "")
+        edge_type = record.get("type", "")
+        if source_type in type_set or target_type in type_set:
+            filtered.append(record)
+            continue
+        if any(
+            graph_type in edge_type
+            for graph_type in _graph_edge_types_for_target(target_types)
+        ):
+            filtered.append(record)
+    return filtered if filtered else records
+
+
+def _sort_group_impact_records(
+    records: list[dict[str, Any]],
+    target_types: list[str],
+) -> list[dict[str, Any]]:
+    return sorted(records, key=lambda item: _group_impact_record_key(item, target_types))
+
+
+def _group_impact_record_key(record: dict[str, Any], target_types: list[str]) -> tuple:
+    band = record.get("_confidence_band", "")
+    band_priority = 0 if band == "confirmed" else 1 if band == "probable" else 2
+    source_type = record.get("source", {}).get("type", "")
+    type_priority = _bridge_priority(source_type, target_types)
+    confidence = -float(record.get("confidence", 0.0))
+    return (band_priority, type_priority, confidence, record.get("_workspace", ""))
+
+
+def _graph_edge_types_for_target(target_types: list[str]) -> list[str]:
+    edge_types: list[str] = []
+    types = set(target_types)
+    if types & {"FeignClient", "FeignMethod"}:
+        edge_types.extend(["IMPLEMENTS_FEIGN", "CALLS_SERVICE"])
+    if "Endpoint" in types:
+        edge_types.extend(["HANDLES_ENDPOINT", "CALLS_SERVICE"])
+    if types & {"MQTopic", "MQConsumer"}:
+        edge_types.extend(["CONSUMES_TOPIC", "PRODUCES_TOPIC"])
+    if "ConfigKey" in types:
+        edge_types.extend(["READS_CONFIG", "INJECTS_BEAN"])
+    if not edge_types:
+        edge_types.extend(["CALLS_METHOD", "CALLS_SERVICE", "READS_FIELD", "IMPORTS"])
+    return edge_types
+
+
+def _graph_edge_priority(edge_type: str, target_types: list[str]) -> int:
+    edge_priorities: dict[str, int] = {}
+    types = set(target_types)
+    if types & {"FeignClient", "FeignMethod"}:
+        edge_priorities.update({"IMPLEMENTS_FEIGN": 0, "CALLS_SERVICE": 1, "CALLS_METHOD": 2})
+    if "Endpoint" in types:
+        edge_priorities.update({"HANDLES_ENDPOINT": 0, "CALLS_SERVICE": 1})
+    if types & {"MQTopic", "MQConsumer"}:
+        edge_priorities.update({"CONSUMES_TOPIC": 0, "PRODUCES_TOPIC": 1})
+    if "ConfigKey" in types:
+        edge_priorities.update({"READS_CONFIG": 0, "INJECTS_BEAN": 1})
+    if not edge_priorities:
+        edge_priorities.update({"CALLS_METHOD": 0, "CALLS_SERVICE": 1, "READS_FIELD": 2, "IMPORTS": 3})
+    return edge_priorities.get(edge_type, 10)
+
+
+def _type_distribution(items: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        node_type = item.get("node_type", "") or item.get("type", "") or "unknown"
+        counts[node_type] = counts.get(node_type, 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
+def _type_distribution_from_impacts(items: list[dict[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        source_type = item.get("source", {}).get("type", "")
+        if source_type:
+            counts[source_type] = counts.get(source_type, 0) + 1
+        target_type = item.get("target", {}).get("type", "")
+        if target_type:
+            counts[target_type] = counts.get(target_type, 0) + 1
+    return dict(sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
+
+
+# ---- Cross-workspace chain stitching (P0) ----------------------------------
+
+
+def group_chain(
+    group: str,
+    symbol: str,
+    direction: str = "callers",
+    depth: int = 2,
+    limit: int = 80,
+    home: str | Path | None = None,
+) -> dict[str, Any]:
+    resolved = _cached_resolve_group(group, home)
+    group_data = _load_group_data(resolved["members"])
+    if not group_data:
+        return {
+            "group": group, "symbol": symbol, "direction": direction,
+            "found": False, "local_chain": [], "boundary_points": [],
+            "cross_workspace_continuations": [], "stitched_chain": [],
+            "stitch_summary": _empty_stitch_summary(), "bridges_used": [],
+            "workspace_count": 0, "missing_members": resolved["missing"],
+        }
+
+    bridges = _build_group_bridges(group_data)
+
+    # Step 4: locate source workspace containing the symbol
+    source_workspace = None
+    source_node = None
+    for member in group_data:
+        wf = member.get("workspace_file", "")
+        info = memory_symbol(wf, symbol, limit=5)
+        if info.get("found"):
+            source_workspace = member
+            source_node = info.get("best_match")
+            break
+
+    if not source_workspace:
+        return {
+            "group": group, "symbol": symbol, "direction": direction,
+            "found": False, "local_chain": [], "boundary_points": [],
+            "cross_workspace_continuations": [], "stitched_chain": [],
+            "stitch_summary": _empty_stitch_summary(), "bridges_used": [],
+            "workspace_count": len(group_data), "missing_members": resolved["missing"],
+        }
+
+    # Step 5: run chain on source workspace
+    wf = source_workspace["workspace_file"]
+    chain_func = memory_callees if direction == "callees" else memory_callers
+    local_result = chain_func(wf, symbol, depth=depth, limit=limit)
+    local_edges = local_result.get(direction if direction == "callees" else "callers", [])
+
+    # Build local service name set for boundary detection
+    topology = _load_workspace_topology(wf)
+    local_services = {svc.get("service_name") or svc.get("name") for svc in topology.get("services", [])}
+
+    # Step 6: detect boundary points
+    boundary_points = _detect_boundary_points(local_edges, local_services)
+
+    # Step 7-8: find continuations via bridges and run target chains (parallelized)
+    continuations: list[dict[str, Any]] = []
+    bridges_used: list[dict[str, Any]] = []
+    tasks = []
+    for bp in boundary_points:
+        for ep in _find_continuation_entry_points(bp, bridges, group_data):
+            if ep.get("workspace_file"):
+                tasks.append((bp, ep))
+
+    if tasks:
+        edge_key = "callees" if direction == "callees" else "callers"
+        with ThreadPoolExecutor(max_workers=min(len(tasks), 4)) as pool:
+            futures = {}
+            for bp, ep in tasks:
+                fut = pool.submit(chain_func, ep["workspace_file"],
+                                  ep["continuation_symbol"], max(depth - 1, 1), limit)
+                futures[fut] = (bp, ep)
+            for fut in as_completed(futures):
+                bp, ep = futures[fut]
+                target_result = fut.result()
+                continuations.append({
+                    "boundary": bp, "bridge": ep["bridge"],
+                    "target_workspace": ep.get("workspace_name", ""),
+                    "continuation": target_result.get(edge_key, []),
+                })
+                bridges_used.append(ep["bridge"])
+
+    # Step 9: stitch chains
+    stitched = _stitch_chain(local_edges, continuations, source_workspace.get("workspace", ""), direction)
+    stitch_summary = _build_stitch_summary(local_edges, boundary_points, bridges_used, continuations, stitched)
+
+    return {
+        "group": group, "symbol": symbol, "direction": direction,
+        "found": True, "target": source_node,
+        "local_chain": local_edges, "boundary_points": boundary_points,
+        "cross_workspace_continuations": continuations,
+        "stitched_chain": stitched, "stitch_summary": stitch_summary,
+        "bridges_used": bridges_used,
+        "workspace_count": len(group_data), "missing_members": resolved["missing"],
+        "top_bridges": bridges[:5],
+        "bridge_reasons": [_bridge_reason_for(bridge) for bridge in bridges[:5]],
+        "cross_workspace_path_hint": _build_cross_workspace_path_hint(stitched),
+    }
+
+
+def _empty_stitch_summary() -> dict[str, int]:
+    return {
+        "local_edge_count": 0, "boundary_count": 0,
+        "bridges_used_count": 0, "stitched_workspace_count": 0,
+        "total_stitched_edge_count": 0,
+    }
+
+
+def _load_workspace_topology(workspace_file: str) -> dict[str, Any]:
+    _, store = load_context(workspace_file)
+    return store.read_json_prefer_backend("service-topology.json", {})
+
+
+def _detect_boundary_points(
+    chain_edges: list[dict[str, Any]],
+    local_services: set[str],
+) -> list[dict[str, Any]]:
+    """Detect boundary points where chain crosses workspace boundaries.
+
+    Supports multiple boundary types:
+    - Feign→Service (CALLS_SERVICE with external target)
+    - Feign→Endpoint (IMPLEMENT_FEIGN to cross-service endpoint)
+    - MQ Producer→Topic (PRODUCES_TOPIC consumed by another workspace)
+    - Config Key shared across workspaces
+    """
+    boundaries: list[dict[str, Any]] = []
+    for edge in chain_edges:
+        edge_type = edge.get("type", "")
+
+        # Feign→Service boundary
+        if edge_type == "CALLS_SERVICE":
+            target = edge.get("target", {})
+            target_name = target.get("name", "")
+            if target.get("type") == "Service" and target_name not in local_services:
+                hint = edge.get("metadata", {}).get("target_service") or target_name
+                boundaries.append({
+                    "edge": edge,
+                    "target_service_name": hint,
+                    "boundary_node_id": target.get("id", ""),
+                    "feign_source_id": edge.get("source", {}).get("id", ""),
+                    "feign_interface": edge.get("source", {}).get("name", ""),
+                    "is_external_service": True,
+                    "external_service_hint": hint,
+                    "boundary_type": "feign-service-phantom",
+                })
+
+        # MQ Producer boundary (topic published by this workspace)
+        elif edge_type == "PRODUCES_TOPIC":
+            target = edge.get("target", {})
+            boundaries.append({
+                "edge": edge,
+                "target_service_name": target.get("name", ""),
+                "boundary_node_id": target.get("id", ""),
+                "feign_source_id": edge.get("source", {}).get("id", ""),
+                "feign_interface": "",
+                "is_external_service": True,
+                "external_service_hint": target.get("name", ""),
+                "boundary_type": "mq-producer",
+                "topic": target.get("name", ""),
+            })
+
+        # MQ Consumer boundary (topic consumed by this workspace)
+        elif edge_type == "CONSUMES_TOPIC":
+            target = edge.get("target", {})
+            boundaries.append({
+                "edge": edge,
+                "target_service_name": target.get("name", ""),
+                "boundary_node_id": target.get("id", ""),
+                "feign_source_id": edge.get("source", {}).get("id", ""),
+                "feign_interface": "",
+                "is_external_service": True,
+                "external_service_hint": target.get("name", ""),
+                "boundary_type": "mq-consumer",
+                "topic": target.get("name", ""),
+            })
+
+    return boundaries
+
+
+def _find_continuation_entry_points(
+    boundary: dict[str, Any],
+    bridges: list[dict[str, Any]],
+    group_data: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Find entry points in other workspaces where a chain can continue.
+
+    Supports multiple bridge types:
+    - FEIGN_ENDPOINT: Feign method → HTTP endpoint (highest precision)
+    - FEIGN_SERVICE: Feign client → service name (medium precision)
+    - MQ_TOPIC_SHARED: Shared MQ topic between workspaces
+    - MQ_TOPIC_CONFIG: MQ topic configured in another workspace
+    - CONFIG_KEY_SHARED: Shared config key
+    """
+    target_service = boundary.get("target_service_name", "")
+    feign_interface = boundary.get("feign_interface", "")
+    boundary_type = boundary.get("boundary_type", "")
+    topic = boundary.get("topic", "")
+    entry_points: list[dict[str, Any]] = []
+
+    # For MQ boundaries, find shared topic bridges
+    if boundary_type in {"mq-producer", "mq-consumer"} and topic:
+        for bridge in bridges:
+            if bridge.get("type") not in {"MQ_TOPIC_SHARED", "MQ_TOPIC_CONFIG"}:
+                continue
+            bridge_summary = bridge.get("summary", "").lower()
+            if topic.lower() not in bridge_summary:
+                continue
+            target_ws_ref = bridge.get("target_workspace", "")
+            if target_ws_ref == boundary.get("edge", {}).get("source", {}).get("project", ""):
+                continue  # Skip same workspace
+            target_member = _find_member_by_ref(group_data, target_ws_ref)
+            if not target_member:
+                continue
+            entry_points.append({
+                "bridge": bridge,
+                "workspace_file": target_member.get("workspace_file", ""),
+                "workspace_name": target_member.get("workspace", ""),
+                "continuation_symbol": topic,
+            })
+
+    # For Feign boundaries, prefer FEIGN_ENDPOINT bridges (more precise)
+    if not entry_points:
+        for bridge in bridges:
+            if bridge.get("type") != "FEIGN_ENDPOINT":
+                continue
+            summary = bridge.get("summary", "")
+            if feign_interface and feign_interface not in summary:
+                continue
+            target_ws_ref = bridge.get("target_workspace", "")
+            target_member = _find_member_by_ref(group_data, target_ws_ref)
+            if not target_member:
+                continue
+            target_project = bridge.get("target_project", "")
+            entry_points.append({
+                "bridge": bridge,
+                "workspace_file": target_member.get("workspace_file", ""),
+                "workspace_name": target_member.get("workspace", ""),
+                "continuation_symbol": target_project or target_service,
+            })
+
+    # Fallback to FEIGN_SERVICE bridges (less precise)
+    if not entry_points:
+        for bridge in bridges:
+            if bridge.get("type") != "FEIGN_SERVICE":
+                continue
+            if bridge.get("evidence", {}).get("target_service") != target_service:
+                continue
+            target_ws_ref = bridge.get("target_workspace", "")
+            target_member = _find_member_by_ref(group_data, target_ws_ref)
+            if not target_member:
+                continue
+            entry_points.append({
+                "bridge": bridge,
+                "workspace_file": target_member.get("workspace_file", ""),
+                "workspace_name": target_member.get("workspace", ""),
+                "continuation_symbol": bridge.get("target_project") or target_service,
+            })
+
+    return entry_points
+
+
+def _find_member_by_ref(
+    group_data: list[dict[str, Any]],
+    workspace_ref: str,
+) -> dict[str, Any] | None:
+    for member in group_data:
+        if member.get("workspace_ref") == workspace_ref or member.get("workspace") == workspace_ref:
+            return member
+    return None
+
+
+def _stitch_chain(
+    local_edges: list[dict[str, Any]],
+    continuations: list[dict[str, Any]],
+    source_workspace_name: str,
+    direction: str,
+) -> list[dict[str, Any]]:
+    stitched: list[dict[str, Any]] = []
+    for edge in local_edges:
+        stitched.append({**edge, "_workspace": source_workspace_name})
+    for cont in continuations:
+        target_ws = cont.get("target_workspace", "")
+        bridge = cont.get("bridge", {})
+        for edge in cont.get("continuation", []):
+            stitched.append({
+                **edge,
+                "_workspace": target_ws,
+                "_cross_workspace_bridge": {
+                    "type": bridge.get("type", ""),
+                    "summary": bridge.get("summary", ""),
+                    "confidence": bridge.get("confidence", 0.0),
+                },
+            })
+    return stitched
+
+
+def _build_stitch_summary(
+    local_edges: list[dict[str, Any]],
+    boundary_points: list[dict[str, Any]],
+    bridges_used: list[dict[str, Any]],
+    continuations: list[dict[str, Any]],
+    stitched: list[dict[str, Any]],
+) -> dict[str, Any]:
+    workspace_names: set[str] = set()
+    for cont in continuations:
+        ws = cont.get("target_workspace", "")
+        if ws:
+            workspace_names.add(ws)
+    return {
+        "local_edge_count": len(local_edges),
+        "boundary_count": len(boundary_points),
+        "bridges_used_count": len(bridges_used),
+        "stitched_workspace_count": len(workspace_names),
+        "total_stitched_edge_count": len(stitched),
+    }
+
+
+def _bridge_reason_for(bridge: dict[str, Any]) -> str:
+    return f"{bridge.get('type', 'bridge')}({bridge.get('confidence', 0.0):.2f}): {bridge.get('summary', '')}"
+
+
+def _build_cross_workspace_path_hint(merged_matches: list[dict[str, Any]]) -> str:
+    workspaces = []
+    for item in merged_matches[:5]:
+        ws = item.get("workspace", "")
+        if ws and ws not in workspaces:
+            workspaces.append(ws)
+    return " -> ".join(workspaces)
+_RESOLVE_GROUP_CACHE: dict[tuple, dict[str, Any]] = {}
+_RESOLVE_GROUP_TTL_SECONDS = 15
+_LOAD_GROUP_DATA_CACHE: dict[tuple, tuple[float, list[dict[str, Any]]]] = {}
+_LOAD_GROUP_DATA_TTL_SECONDS = 15
+
+
+def _cached_resolve_group(group: str, home: str | Path | None = None) -> dict[str, Any]:
+    cache_key = (str(group), str(Path(home).expanduser()) if home else "")
+    now = time.monotonic()
+    cached = _RESOLVE_GROUP_CACHE.get(cache_key)
+    if cached and (now - float(cached.get("_cached_at", 0))) < _RESOLVE_GROUP_TTL_SECONDS:
+        return copy.deepcopy(cached["value"])
+    result = resolve_group(group, home)
+    _RESOLVE_GROUP_CACHE[cache_key] = {
+        "value": copy.deepcopy(result),
+        "_cached_at": now,
+    }
+    return copy.deepcopy(result)
+
+
+def _clear_expired_group_caches() -> None:
+    now = time.monotonic()
+    for key in list(_RESOLVE_GROUP_CACHE.keys()):
+        if (now - float(_RESOLVE_GROUP_CACHE[key].get("_cached_at", 0))) >= _RESOLVE_GROUP_TTL_SECONDS:
+            _RESOLVE_GROUP_CACHE.pop(key, None)
+    for key in list(_LOAD_GROUP_DATA_CACHE.keys()):
+        if (now - _LOAD_GROUP_DATA_CACHE[key][0]) >= _LOAD_GROUP_DATA_TTL_SECONDS:
+            _LOAD_GROUP_DATA_CACHE.pop(key, None)

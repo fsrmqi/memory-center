@@ -1,0 +1,642 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+from memory_center.core.storage.runtime import RuntimeStore
+from memory_center.core.storage.workspace import WorkspaceStore
+
+JAVA_CALL_CASE_FIELDS = {
+    "case_id",
+    "source",
+    "expected_target",
+    "project",
+    "min_confidence",
+    "expected_resolution_levels",
+    "allowed_targets",
+    "forbidden_targets",
+}
+
+# These categories describe gaps that can be proven with a small private
+# logical-anchor suite. Dependency and scope gaps must be handled as coverage
+# decisions, not by widening the resolver until unresolved counts look better.
+_ACTIONABLE_CAMPAIGN_CATEGORIES = (
+    "missing_method_or_polymorphism",
+    "receiver_type_missing",
+    "dynamic_or_unqualified",
+)
+
+
+@dataclass(frozen=True)
+class JavaCallResolutionCase:
+    case_id: str
+    source: str
+    expected_target: str
+    project: str = ""
+    min_confidence: float = 0.85
+    expected_resolution_levels: tuple[str, ...] = ()
+    allowed_targets: tuple[str, ...] = ()
+    forbidden_targets: tuple[str, ...] = ()
+
+    @classmethod
+    def from_mapping(cls, data: Mapping[str, Any]) -> JavaCallResolutionCase:
+        unsupported = sorted(set(data) - JAVA_CALL_CASE_FIELDS)
+        if unsupported:
+            raise ValueError(f"unsupported java call case fields: {', '.join(unsupported)}")
+        case_id = str(data.get("case_id", "") or "").strip()
+        source = _validate_anchor(data.get("source", ""), "source")
+        expected_target = _validate_anchor(data.get("expected_target", ""), "expected_target")
+        if not case_id:
+            raise ValueError("case_id is required")
+        return cls(
+            case_id=case_id,
+            source=source,
+            expected_target=expected_target,
+            project=str(data.get("project", "") or "").strip(),
+            min_confidence=max(0.0, min(1.0, float(data.get("min_confidence", 0.85) or 0.85))),
+            expected_resolution_levels=_string_tuple(data.get("expected_resolution_levels", [])),
+            allowed_targets=_anchor_tuple(data.get("allowed_targets", []), "allowed_targets"),
+            forbidden_targets=_anchor_tuple(data.get("forbidden_targets", []), "forbidden_targets"),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "case_id": self.case_id,
+            "source": self.source,
+            "expected_target": self.expected_target,
+            "project": self.project,
+            "min_confidence": self.min_confidence,
+            "expected_resolution_levels": list(self.expected_resolution_levels),
+            "allowed_targets": list(self.allowed_targets),
+            "forbidden_targets": list(self.forbidden_targets),
+        }
+
+
+def load_java_call_resolution_cases(cases_file: str | Path) -> list[JavaCallResolutionCase]:
+    path = Path(cases_file).expanduser().resolve()
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    if set(data) - {"schema_version", "cases"}:
+        raise ValueError("java call resolution suite only supports schema_version and cases")
+    rows = data.get("cases", [])
+    if not isinstance(rows, list):
+        raise ValueError("cases must be a list")
+    cases = [JavaCallResolutionCase.from_mapping(row) for row in rows if isinstance(row, dict)]
+    if not cases:
+        raise ValueError("java call resolution suite requires at least one case")
+    ids = [case.case_id for case in cases]
+    if len(ids) != len(set(ids)):
+        raise ValueError("java call resolution case_id values must be unique")
+    return cases
+
+
+def run_java_call_resolution_suite(
+    workspace_file: str | Path,
+    cases_file: str | Path,
+    *,
+    min_recall: float = 0.90,
+    min_confidence_rate: float = 0.85,
+    min_resolution_level_rate: float = 1.0,
+    max_unresolved_rate: float = 0.10,
+    fail_on_unexpected_high_confidence: bool = False,
+    fail_on_forbidden_high_confidence: bool = False,
+) -> dict[str, Any]:
+    cases = load_java_call_resolution_cases(cases_file)
+    store = WorkspaceStore(workspace_file)
+    case_results: list[dict[str, Any]] = []
+    with RuntimeStore(store.graph_db_path) as graph:
+        conn = graph.connect()
+        for case in cases:
+            case_results.append(_evaluate_case(conn, case))
+
+    case_count = len(case_results)
+    found_count = sum(1 for row in case_results if row["target_found"])
+    confidence_count = sum(1 for row in case_results if row["confidence_passed"])
+    resolution_count = sum(1 for row in case_results if row["resolution_level_passed"])
+    unresolved_count = sum(1 for row in case_results if row["unresolved"])
+    unexpected_count = sum(len(row["unexpected_high_confidence_edges"]) for row in case_results)
+    allowed_count = sum(len(row["allowed_high_confidence_edges"]) for row in case_results)
+    forbidden_count = sum(len(row["forbidden_high_confidence_edges"]) for row in case_results)
+    recall = found_count / case_count if case_count else 0.0
+    confidence_rate = confidence_count / case_count if case_count else 0.0
+    resolution_rate = resolution_count / case_count if case_count else 0.0
+    unresolved_rate = unresolved_count / case_count if case_count else 0.0
+    passed = (
+        recall >= min_recall
+        and confidence_rate >= min_confidence_rate
+        and resolution_rate >= min_resolution_level_rate
+        and unresolved_rate <= max_unresolved_rate
+        and (not fail_on_unexpected_high_confidence or unexpected_count == 0)
+        and (not fail_on_forbidden_high_confidence or forbidden_count == 0)
+    )
+    return {
+        "schema_version": 1,
+        "suite": "java_call_resolution",
+        "summary": {
+            "case_count": case_count,
+            "passed_cases": sum(1 for row in case_results if row["passed"]),
+            "edge_recall": round(recall, 4),
+            "high_confidence_expected_rate": round(confidence_rate, 4),
+            "resolution_level_rate": round(resolution_rate, 4),
+            "resolution_level_mismatch_count": case_count - resolution_count,
+            "unresolved_rate": round(unresolved_rate, 4),
+            "unexpected_high_confidence_edge_count": unexpected_count,
+            "allowed_high_confidence_edge_count": allowed_count,
+            "forbidden_high_confidence_edge_count": forbidden_count,
+            "passed": passed,
+        },
+        "thresholds": {
+            "min_recall": min_recall,
+            "min_confidence_rate": min_confidence_rate,
+            "min_resolution_level_rate": min_resolution_level_rate,
+            "max_unresolved_rate": max_unresolved_rate,
+            "fail_on_unexpected_high_confidence": fail_on_unexpected_high_confidence,
+            "fail_on_forbidden_high_confidence": fail_on_forbidden_high_confidence,
+        },
+        "cases": case_results,
+    }
+
+
+def summarize_java_call_resolution_metrics(workspace_file: str | Path) -> dict[str, Any]:
+    """Return aggregate CALLS_METHOD metrics without source details.
+
+    The report makes newly introduced resolution modes observable in a real
+    workspace without reading source, paths, or private benchmark cases.
+    Expected and forbidden edges remain the responsibility of the separate
+    logical-anchor suite.
+    """
+
+    store = WorkspaceStore(workspace_file)
+    resolution_level_counts: Counter[str] = Counter()
+    source_ids_by_level: dict[str, set[str]] = {}
+    confidence_total = 0.0
+    total = 0
+    unresolved = 0
+    with RuntimeStore(store.graph_db_path) as graph:
+        conn = graph.connect()
+        rows = conn.execute("SELECT source_id, confidence, metadata_json FROM edges WHERE type = 'CALLS_METHOD'")
+        for row in rows:
+            total += 1
+            metadata = _json_dict(row["metadata_json"])
+            level = str(metadata.get("resolution_level", "") or "unknown")
+            resolution_level_counts[level] += 1
+            source_ids_by_level.setdefault(level, set()).add(str(row["source_id"] or ""))
+            confidence_total += float(row["confidence"] or 0.0)
+            if level == "unresolved":
+                unresolved += 1
+
+    chain_count = resolution_level_counts["chain_return_type"]
+    return {
+        "schema_version": 1,
+        "suite": "java_call_resolution_metrics",
+        "summary": {
+            "call_edge_count": total,
+            "resolved_call_edge_count": total - unresolved,
+            "unresolved_call_edge_count": unresolved,
+            "unresolved_rate": round(unresolved / total, 4) if total else 0.0,
+            "mean_confidence": round(confidence_total / total, 4) if total else 0.0,
+            "resolution_level_counts": dict(sorted(resolution_level_counts.items())),
+            "chain_return_type_edge_count": chain_count,
+            "chain_return_type_source_count": len(source_ids_by_level.get("chain_return_type", set())),
+        },
+        "next_action": "Use private logical-anchor cases to validate expected and forbidden edges before changing resolver rules.",
+    }
+
+
+def review_java_call_resolution_suite(
+    workspace_file: str | Path,
+    cases_file: str | Path,
+    *,
+    limit: int = 200,
+) -> dict[str, Any]:
+    """List unclassified high-confidence calls using logical anchors only."""
+
+    cases = load_java_call_resolution_cases(cases_file)
+    store = WorkspaceStore(workspace_file)
+    grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
+    with RuntimeStore(store.graph_db_path) as graph:
+        conn = graph.connect()
+        for case in cases:
+            result = _evaluate_case(conn, case)
+            for edge in result["unexpected_high_confidence_edges"]:
+                key = (
+                    str(edge.get("source") or case.source),
+                    str(edge.get("target") or ""),
+                    str(edge.get("resolution_level") or ""),
+                )
+                record = grouped.setdefault(
+                    key,
+                    {
+                        "source": key[0],
+                        "target": key[1],
+                        "resolution_level": key[2],
+                        "confidence": 0.0,
+                        "case_ids": [],
+                        "expected_targets": [],
+                        "review_status": "unclassified",
+                    },
+                )
+                record["confidence"] = max(float(record["confidence"]), float(edge.get("confidence", 0.0) or 0.0))
+                if case.case_id not in record["case_ids"]:
+                    record["case_ids"].append(case.case_id)
+                if case.expected_target not in record["expected_targets"]:
+                    record["expected_targets"].append(case.expected_target)
+
+    items = sorted(
+        grouped.values(),
+        key=lambda item: (-float(item["confidence"]), item["source"], item["target"], item["resolution_level"]),
+    )
+    for item in items:
+        item["confidence"] = round(float(item["confidence"]), 4)
+        item["case_ids"].sort()
+        item["expected_targets"].sort()
+    resolution_level_counts: dict[str, int] = {}
+    for item in items:
+        level = str(item["resolution_level"] or "unknown")
+        resolution_level_counts[level] = resolution_level_counts.get(level, 0) + 1
+    return {
+        "schema_version": 1,
+        "suite": "java_call_resolution_review",
+        "summary": {
+            "case_count": len(cases),
+            "unclassified_high_confidence_edge_count": len(items),
+            "returned_count": min(max(0, limit), len(items)),
+            "resolution_level_counts": dict(sorted(resolution_level_counts.items())),
+        },
+        "items": items[: max(0, limit)],
+        "next_action": "Classify each item into the case's allowed_targets or forbidden_targets; do not add filesystem paths or source snippets.",
+    }
+
+
+def summarize_unresolved_java_calls(
+    workspace_file: str | Path,
+    *,
+    sample_limit: int = 30,
+) -> dict[str, Any]:
+    """Classify unresolved Java call edges without exposing source paths or snippets.
+
+    The call-resolution gate answers whether selected expected edges work. This
+    report answers where the remaining unresolved population is concentrated so
+    parser work can be prioritized from evidence rather than raw edge counts.
+    """
+
+    store = WorkspaceStore(workspace_file)
+    category_counts: Counter[str] = Counter()
+    reason_counts: Counter[str] = Counter()
+    receiver_shape_counts: Counter[str] = Counter()
+    samples: list[dict[str, Any]] = []
+    samples_by_category: dict[str, list[dict[str, Any]]] = {}
+    total_call_edges = 0
+    unresolved_call_edges = 0
+    max_samples = max(0, sample_limit)
+
+    with RuntimeStore(store.graph_db_path) as graph:
+        conn = graph.connect()
+        rows = conn.execute(
+            """
+            SELECT e.confidence, e.metadata_json,
+                   source.name AS source_name, target.name AS target_name
+            FROM edges e
+            LEFT JOIN nodes source ON source.id = e.source_id
+            LEFT JOIN nodes target ON target.id = e.target_id
+            WHERE e.type = 'CALLS_METHOD'
+            ORDER BY e.id
+            """
+        )
+        for row in rows:
+            total_call_edges += 1
+            metadata = _json_dict(row["metadata_json"])
+            if str(metadata.get("resolution_level", "") or "") != "unresolved":
+                continue
+            unresolved_call_edges += 1
+            reason = _effective_unresolved_reason(metadata)
+            category = _unresolved_category(reason)
+            receiver_shape = _receiver_shape(metadata)
+            reason_counts[reason] += 1
+            category_counts[category] += 1
+            receiver_shape_counts[receiver_shape] += 1
+            sample = {
+                "source": _anchor_from_method_name(row["source_name"]),
+                "target": _anchor_from_method_name(row["target_name"]),
+                "category": category,
+                "reason": reason,
+                "receiver_shape": receiver_shape,
+                "confidence": round(float(row["confidence"] or 0.0), 4),
+            }
+            if len(samples) < max_samples:
+                samples.append(sample)
+            category_samples = samples_by_category.setdefault(category, [])
+            if len(category_samples) < max_samples:
+                category_samples.append(sample)
+
+    categories = [
+        {
+            "category": category,
+            "count": count,
+            "rate": round(count / unresolved_call_edges, 4) if unresolved_call_edges else 0.0,
+            "recommended_action": _unresolved_recommendation(category),
+        }
+        for category, count in sorted(category_counts.items(), key=lambda item: (-item[1], item[0]))
+    ]
+    actionable_categories = [
+        category
+        for category in categories
+        if category["category"] in _ACTIONABLE_CAMPAIGN_CATEGORIES
+    ]
+    campaign_category = actionable_categories[0] if actionable_categories else {}
+    campaign_samples = samples_by_category.get(str(campaign_category.get("category", "")), [])
+    campaign = {
+        "status": (
+            "ready_for_case_design"
+            if campaign_category
+            else "requires_scope_or_dependency_review"
+            if categories
+            else "no_unresolved_calls"
+        ),
+        "target_category": campaign_category.get("category", ""),
+        "target_count": campaign_category.get("count", 0),
+        "case_contract": {
+            "minimum_cases": 3,
+            "maximum_cases": 5,
+            "required_fields": ["source", "expected_target", "allowed_targets", "forbidden_targets"],
+            "rule_change_allowed": False,
+            "unlock_condition": "至少 3 个新逻辑锚点 case 通过 expected/allowed/forbidden 门禁。",
+        },
+        "candidate_samples": campaign_samples,
+        "excluded_categories": [
+            category["category"]
+            for category in categories
+            if category["category"] not in _ACTIONABLE_CAMPAIGN_CATEGORIES
+        ],
+        "next_action": (
+            "先为最大本地可证明类别补 3 到 5 个逻辑锚点 case；通过 precision/forbidden-hit 门禁后才修改 parser 或 resolver。"
+            if campaign_category
+            else "未发现可由 resolver 安全处理的本地类别；先核对工作区范围或依赖源码覆盖，不添加猜测性 fallback。"
+        ),
+    }
+    return {
+        "schema_version": 1,
+        "suite": "java_call_resolution_unresolved",
+        "summary": {
+            "call_edge_count": total_call_edges,
+            "unresolved_call_edge_count": unresolved_call_edges,
+            "unresolved_rate": round(unresolved_call_edges / total_call_edges, 4) if total_call_edges else 0.0,
+            "category_counts": dict(sorted(category_counts.items())),
+            "reason_counts": dict(sorted(reason_counts.items())),
+            "receiver_shape_counts": dict(sorted(receiver_shape_counts.items())),
+            "returned_sample_count": len(samples),
+        },
+        "categories": categories,
+        "campaign": campaign,
+        "samples": samples,
+        "next_action": (
+            "Prioritize the largest locally provable category, add logical-anchor cases, then improve only the responsible parser or resolver layer."
+            if campaign_category
+            else "Review dependency and workspace scope coverage; do not change the resolver for external or out-of-scope calls."
+        ),
+    }
+
+
+def _evaluate_case(conn: sqlite3.Connection, case: JavaCallResolutionCase) -> dict[str, Any]:
+    source_name = _method_node_name(case.source)
+    expected_target_name = _method_node_name(case.expected_target)
+    sources = _find_method_nodes(conn, source_name, project=case.project)
+    outgoing_edges = _load_call_edges(conn, [row["id"] for row in sources])
+    matched_edges = [edge for edge in outgoing_edges if edge.get("target_name") == expected_target_name]
+    best_match = _best_edge(matched_edges)
+    target_found = best_match is not None
+    confidence = float(best_match.get("confidence", 0.0)) if best_match else 0.0
+    metadata = _json_dict(best_match.get("metadata_json")) if best_match else {}
+    resolution_level = str(metadata.get("resolution_level", "") or "")
+    confidence_passed = target_found and confidence >= case.min_confidence
+    resolution_level_passed = target_found and (
+        not case.expected_resolution_levels or resolution_level in set(case.expected_resolution_levels)
+    )
+    allowed_names = _target_names(case.allowed_targets)
+    forbidden_names = _target_names(case.forbidden_targets)
+    unexpected_high_confidence = [
+        _edge_summary(edge)
+        for edge in outgoing_edges
+        if float(edge.get("confidence", 0.0) or 0.0) >= case.min_confidence
+        and edge.get("target_name") not in {expected_target_name, *allowed_names, *forbidden_names}
+    ]
+    allowed_high_confidence = [
+        _edge_summary(edge)
+        for edge in outgoing_edges
+        if float(edge.get("confidence", 0.0) or 0.0) >= case.min_confidence and edge.get("target_name") in allowed_names
+    ]
+    forbidden_high_confidence = [
+        _edge_summary(edge)
+        for edge in outgoing_edges
+        if float(edge.get("confidence", 0.0) or 0.0) >= case.min_confidence
+        and edge.get("target_name") in forbidden_names
+    ]
+    unresolved = (not target_found) or resolution_level == "unresolved"
+    passed = target_found and confidence_passed and resolution_level_passed and not unresolved
+    return {
+        "case_id": case.case_id,
+        "source": case.source,
+        "expected_target": case.expected_target,
+        "source_candidates": len(sources),
+        "call_edge_count": len(outgoing_edges),
+        "target_found": target_found,
+        "confidence": round(confidence, 4),
+        "min_confidence": case.min_confidence,
+        "confidence_passed": confidence_passed,
+        "resolution_level": resolution_level,
+        "expected_resolution_levels": list(case.expected_resolution_levels),
+        "allowed_targets": list(case.allowed_targets),
+        "forbidden_targets": list(case.forbidden_targets),
+        "resolution_level_passed": resolution_level_passed,
+        "unresolved": unresolved,
+        "unexpected_high_confidence_edges": unexpected_high_confidence,
+        "allowed_high_confidence_edges": allowed_high_confidence,
+        "forbidden_high_confidence_edges": forbidden_high_confidence,
+        "matched_edge": _edge_summary(best_match) if best_match else None,
+        "passed": passed,
+    }
+
+
+def _find_method_nodes(conn: sqlite3.Connection, name: str, *, project: str = "") -> list[sqlite3.Row]:
+    sql = "SELECT * FROM nodes WHERE type='Method' AND name=?"
+    args: list[Any] = [name]
+    if project:
+        sql += " AND project=?"
+        args.append(project)
+    rows = conn.execute(sql, args).fetchall()
+    if rows or not project:
+        return list(rows)
+    return list(conn.execute("SELECT * FROM nodes WHERE type='Method' AND name=?", (name,)).fetchall())
+
+
+def _load_call_edges(conn: sqlite3.Connection, source_ids: Sequence[str]) -> list[dict[str, Any]]:
+    if not source_ids:
+        return []
+    placeholders = ",".join("?" for _ in source_ids)
+    sql = f"""
+        SELECT
+          e.id,
+          e.source_id,
+          e.target_id,
+          e.type,
+          e.confidence,
+          e.metadata_json,
+          s.name AS source_name,
+          s.project AS source_project,
+          t.name AS target_name,
+          t.project AS target_project
+        FROM edges e
+        JOIN nodes s ON s.id=e.source_id
+        JOIN nodes t ON t.id=e.target_id
+        WHERE e.type='CALLS_METHOD' AND e.source_id IN ({placeholders})
+    """
+    return [dict(row) for row in conn.execute(sql, list(source_ids)).fetchall()]
+
+
+def _best_edge(edges: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
+    if not edges:
+        return None
+    return max(edges, key=lambda edge: float(edge.get("confidence", 0.0) or 0.0))
+
+
+def _edge_summary(edge: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if not edge:
+        return None
+    metadata = _json_dict(edge.get("metadata_json"))
+    return {
+        "source": _anchor_from_method_name(edge.get("source_name", "")),
+        "target": _anchor_from_method_name(edge.get("target_name", "")),
+        "confidence": round(float(edge.get("confidence", 0.0) or 0.0), 4),
+        "resolution_level": metadata.get("resolution_level", ""),
+        "target_fqcn": metadata.get("target_fqcn", ""),
+    }
+
+
+def _json_dict(raw: Any) -> dict[str, Any]:
+    if isinstance(raw, dict):
+        return raw
+    try:
+        value = json.loads(str(raw or "{}"))
+    except json.JSONDecodeError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _validate_anchor(raw: Any, field: str) -> str:
+    value = str(raw or "").strip()
+    if not value:
+        raise ValueError(f"{field} is required")
+    if value.startswith(("/", "~")) or "\\" in value:
+        raise ValueError(f"{field} must be a logical anchor, not a filesystem path")
+    if "#" not in value and "." not in value:
+        raise ValueError(f"{field} must look like Class#method or Class.method")
+    return value
+
+
+def _method_node_name(anchor: str) -> str:
+    text = anchor.strip()
+    if "#" in text:
+        owner, method = text.split("#", 1)
+        return f"{owner.strip()}.{method.strip()}"
+    return text
+
+
+def _target_names(anchors: Sequence[str]) -> set[str]:
+    return {_method_node_name(anchor) for anchor in anchors}
+
+
+def _anchor_from_method_name(name: Any) -> str:
+    text = str(name or "").strip()
+    if "." not in text:
+        return text
+    owner, method = text.rsplit(".", 1)
+    return f"{owner}#{method}"
+
+
+def _string_tuple(raw: Any) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError("expected_resolution_levels must be a list")
+    return tuple(str(value).strip() for value in raw if str(value).strip())
+
+
+def _anchor_tuple(raw: Any, field: str) -> tuple[str, ...]:
+    if raw is None:
+        return ()
+    if not isinstance(raw, (list, tuple)):
+        raise ValueError(f"{field} must be a list")
+    return tuple(_validate_anchor(value, field) for value in raw)
+
+
+def _unresolved_category(reason: str) -> str:
+    return {
+        "receiver_type_missing": "receiver_type_missing",
+        "unqualified_or_dynamic": "dynamic_or_unqualified",
+        "receiver_type_not_indexed": "external_or_missing_source",
+        "inherited_method_out_of_scope": "external_or_missing_source",
+        "chain_return_type_not_indexed": "external_or_missing_source",
+        "static_receiver_not_indexed": "external_or_missing_source",
+        # Phase D refinement splits the legacy static bucket by whether the
+        # receiver type exists in the workspace at all.
+        "external_static_call": "external_or_missing_source",
+        "same_name_class_not_visible": "external_or_missing_source",
+        "nested_type_static_call": "external_or_missing_source",
+        "generated_enum_method_out_of_scope": "generated_or_inherited",
+        "static_receiver_without_visible_import": "out_of_scope_target",
+        "target_out_of_scope": "out_of_scope_target",
+        "lombok_target_out_of_scope": "out_of_scope_target",
+        "target_method_not_indexed": "missing_method_or_polymorphism",
+    }.get(reason, "unknown")
+
+
+def _unresolved_recommendation(category: str) -> str:
+    return {
+        "receiver_type_missing": "Improve local variable and injected-field type extraction before adding resolver fallbacks.",
+        "dynamic_or_unqualified": "Sample calls first; only add deterministic same-class or static-import handling when false positives stay zero.",
+        "external_or_missing_source": "Classify dependency or missing-module coverage; do not synthesize a target edge.",
+        "generated_or_inherited": "Keep compiler-generated and inherited methods out of local polymorphism campaigns.",
+        "out_of_scope_target": "Verify workspace scope and project filters before changing call-resolution rules.",
+        "missing_method_or_polymorphism": "Add focused interface/implementation or overload cases before changing polymorphic dispatch.",
+        "unknown": "Inspect logical-anchor samples and add a dedicated unresolved_reason before implementing a fallback.",
+    }[category]
+
+
+def _effective_unresolved_reason(metadata: Mapping[str, Any]) -> str:
+    """Refine legacy rows without requiring a full reindex.
+
+    Earlier generations classified every receiver with no extracted type as
+    ``receiver_type_missing``.  A capitalized receiver is instead a static
+    class-style invocation; when it has no workspace declaration it belongs
+    to dependency/scope coverage, not local type extraction.  The original
+    graph edge remains untouched and no target is synthesized.
+    """
+
+    reason = str(metadata.get("unresolved_reason", "") or "unknown")
+    receiver = str(metadata.get("receiver", "") or "").strip()
+    receiver_type = str(metadata.get("receiver_type", "") or "").strip()
+    if reason == "receiver_type_missing" and not receiver_type and _is_class_like_receiver(receiver):
+        return "static_receiver_not_indexed"
+    return reason
+
+
+def _receiver_shape(metadata: Mapping[str, Any]) -> str:
+    receiver = str(metadata.get("receiver", "") or "").strip()
+    receiver_type = str(metadata.get("receiver_type", "") or "").strip()
+    if receiver_type:
+        return "typed_receiver"
+    if not receiver:
+        return "unqualified_or_dynamic"
+    if _is_class_like_receiver(receiver):
+        return "static_class_receiver"
+    return "untyped_instance_receiver"
+
+
+def _is_class_like_receiver(receiver: str) -> bool:
+    return bool(receiver) and receiver[0:1].isupper()

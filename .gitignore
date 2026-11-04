@@ -1,0 +1,85 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+dist/
+build/
+*.egg-info/
+.memory-center/index/
+.memory-center/memory/
+.DS_Store
+*.iml
+.cursor/
+
+# Local benchmark/profile artifacts can contain absolute paths and private
+# source/module names. Keep benchmark summaries in Markdown instead.
+docs/benchmarks/*.prof
+*.prof
+
+# IDE / AI editor configs
+/.idea/
+/.claude/
+
+# Generated index data (rebuild with `memory-center reindex`)
+.memory-center/graph/
+.memory-center/provider-mcp-policy.json
+
+# Example workspace runtime outputs. Keep examples reproducible via source,
+# workspace.yaml, cases, indexes and graph snapshots; do not track mutable
+# runtime memory/metrics written during tests or local verification.
+examples/*/.memory-center/memory/*.db
+examples/*/.memory-center/memory/*-log.jsonl
+examples/*/.memory-center/memory/operation-events.jsonl
+examples/*/.memory-center/metrics.jsonl
+examples/*/.memory-center/graph/*.db-shm
+examples/*/.memory-center/graph/*.db-wal
+examples/golden-benchmark/memory/*.db
+examples/golden-benchmark/memory/*-log.jsonl
+examples/golden-benchmark/memory/operation-events.jsonl
+examples/golden-benchmark/metrics.jsonl
+/tmp/**
+/.workbuddy/
+# Private retrieval replay cases / query mappings (never committed)
+private/
+*.replay-private.yaml
+*.replay-queries.yaml
+
+# Mimosa security-scan bookkeeping (never commit)
+/.mimosa/
+
+# Frontend dependencies
+frontend/node_modules/
+
+# Frontend build output. Produced by `frontend` (vite outDir) and injected into
+# the wheel/sdist at packaging time. Use scripts/service/build-release.sh so a
+# local build never ships a wheel without the admin page.
+memory_center/service/static/
+/.dsh-tmp/
+
+# Local-only env / compose overrides / AI tool caches. These used to live only
+# in .git/info/exclude, which is private to one clone; keep them here so every
+# contributor is protected by default.
+/.env
+/.env.*
+!/.env.example
+/compose.override.yaml
+/.worktrees/
+/.gitnexus/
+
+# Generated example artifacts (regenerable with `memory-center reindex`).
+# Anchored per-directory patterns above only match the repository root, so the
+# nested example workspaces need explicit coverage here.
+examples/**/.memory-center/index/
+examples/**/.memory-center/graph/
+examples/**/.memory-center/store.lock
+examples/**/graph/
+examples/**/index/
+examples/**/*.db
+examples/**/*.db-shm
+examples/**/*.db-wal
+examples/**/store.lock
+
+# 内部资料（内部路线／回执／真实工作区基准／第三方调研），不入库、不发布
+/docs-internal/

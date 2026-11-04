@@ -1,0 +1,1461 @@
+"""Hybrid retrieval engine — combines graph, sparse (FTS), and semantic search with intelligent routing.
+
+This module implements the hybrid retrieval strategy from NEXT_PHASE_MASTER_PLAN Phase A:
+- Graph traversal for structural relationships (callers, callees, chains)
+- Sparse/FTS search for exact matches and keyword lookup
+- Semantic search for fuzzy/conceptual matches
+- Intelligent routing based on query characteristics
+- Summary layer for cross-workspace links
+"""
+from __future__ import annotations
+
+import copy
+import os
+import re
+import time
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from dataclasses import dataclass, field
+from pathlib import Path
+from threading import Lock
+from typing import Any
+
+from memory_center.core.assessment.quality import evidence_level_for
+from memory_center.core.indexing.precision import parser_precision_from_workspace
+from memory_center.core.knowledge.ontology import (
+    EDGE_SEMANTIC_STRENGTH,
+    EntityValidator,
+    annotate_semantic_strength,
+    multi_hop_confidence,
+)
+from memory_center.core.observability.diagnostics import DIAG, diag_entry
+from memory_center.core.retrieval.scoring import best_match, reciprocal_rank, tokenize
+from memory_center.core.retrieval.semantic import semantic_query
+from memory_center.core.storage.runtime import RuntimeStore
+
+from .graph_rank import bounded_personalized_rank
+from .policy import select_retrieval_policy
+
+__all__ = [
+    "EntityValidator",
+    "HybridRetrievalConfig",
+    "RetrievalResult",
+    "annotate_semantic_strength",
+    "detect_query_intent",
+    "hybrid_retrieve",
+    "multi_hop_confidence",
+]
+
+
+# Ontology semantic strength mapping (from docs/ONTOLOGY.md §3.1)
+_EDGE_SEMANTIC_STRENGTH = {
+    # Ontology semantic strength — now sourced from ontology module (§3.1)
+}
+# Merge ontology module's edge strength into local lookup
+_EDGE_SEMANTIC_STRENGTH.update(EDGE_SEMANTIC_STRENGTH)
+
+_RETRIEVAL_CACHE_TTL_SECONDS = 20.0
+_RETRIEVAL_CACHE_MAX_ITEMS = 64
+_RETRIEVAL_CACHE: OrderedDict[tuple[object, ...], tuple[float, dict[str, Any]]] = OrderedDict()
+_RETRIEVAL_CACHE_LOCK = Lock()
+
+
+@dataclass
+class RetrievalResult:
+    """Unified retrieval result with provenance tracking."""
+    node_id: str
+    node: dict[str, Any]
+    score: float = 0.0
+    sources: list[str] = field(default_factory=list)  # graph, sparse, semantic
+    evidence: dict[str, Any] = field(default_factory=dict)
+    neighbors: list[dict[str, Any]] = field(default_factory=list)
+    cross_workspace_refs: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass
+class HybridRetrievalConfig:
+    """Configuration for hybrid retrieval routing."""
+    # Weight for each retrieval source
+    graph_weight: float = 0.4
+    sparse_weight: float = 0.35
+    semantic_weight: float = 0.25
+
+    # Thresholds
+    min_confidence: float = 0.3
+    max_results: int = 20
+    neighbor_depth: int = 2
+    neighbor_limit: int = 50
+
+    # Vector retrieval weight
+    vector_weight: float = 0.15
+
+    # Feature flags
+    enable_cross_workspace: bool = True
+    enable_summary_layer: bool = True
+    enable_type_boosting: bool = True
+    enable_sparse_bm25: bool = True
+    enable_semantic: bool = True
+    enable_vector: bool = False
+    enable_graph_rank: bool = True
+    enable_reranker: bool = False
+
+
+# Query pattern detection
+_QUERY_PATTERNS = {
+    "feign": re.compile(r"feign|fegin|远程调用|rpc", re.IGNORECASE),
+    "mq": re.compile(r"kafka|rocketmq|topic|consumer|producer|消息队列|mq", re.IGNORECASE),
+    "endpoint": re.compile(r"/[a-z]|controller|api|接口|endpoint", re.IGNORECASE),
+    "config": re.compile(r"config|配置|properties|yaml|yml", re.IGNORECASE),
+    "chain": re.compile(r"调用链|call.?chain|trace|跟踪", re.IGNORECASE),
+    "class": re.compile(r"class|类|service|impl|dao|mapper|repository", re.IGNORECASE),
+    "method": re.compile(r"方法|method|function|函数", re.IGNORECASE),
+}
+
+# Java 命名模式推断
+_JAVA_PATTERNS = {
+    "feign": re.compile(
+        r"(^Fegin[A-Z][a-zA-Z]*Service$)|"
+        r"(^Feign[A-Z][a-zA-Z]*Service$)|"
+        r"(^[A-Z][a-zA-Z]*Feign(Client|Service)?$)",
+        re.IGNORECASE,
+    ),
+    "endpoint": re.compile(r"Controller$|Resource$|Api$", re.IGNORECASE),
+    "class": re.compile(r"Service$|ServiceImpl$|Impl$|Dao$|Mapper$|Repository$", re.IGNORECASE),
+    "method": re.compile(r"^[a-z][a-zA-Z0-9_]*([A-Z][a-z0-9_]*)+$"),
+}
+
+
+def _normalize_java_symbol_query(query: str) -> str:
+    raw = (query or "").strip()
+    symbol_match = re.search(r"[\w.$]+#[\w$]+", raw)
+    normalized = (symbol_match.group(0) if symbol_match else raw).replace("#", ".")
+    if not normalized:
+        return ""
+    return normalized.split(".")[-1]
+
+
+def _exact_lookup_query(query: str) -> str:
+    raw = (query or "").strip()
+    symbol_match = re.search(r"[\w.$]+#[\w$]+", raw)
+    return symbol_match.group(0).replace("#", ".") if symbol_match else raw
+
+
+def _looks_like_java_symbol_query(query: str) -> bool:
+    token = _normalize_java_symbol_query(query)
+    if not token:
+        return False
+    if any(ch.isspace() for ch in query):
+        return False
+    return bool(re.match(r"^[A-Z][A-Za-z0-9_]*$", token))
+
+
+def _node_matches_query_name(node: dict[str, Any], query: str) -> bool:
+    target = _normalize_java_symbol_query(query).lower()
+    if not target:
+        return False
+    name = str(node.get("name", "") or "").strip()
+    if not name:
+        return False
+    short = name.split(".")[-1].lower()
+    return short == target or name.lower() == target
+
+
+def _has_exact_like_source(item: RetrievalResult) -> bool:
+    return any(source in {"graph_exact", "graph_token", "sparse_fts", "sparse_bm25"} for source in item.sources)
+
+
+def detect_query_intent(query: str) -> dict[str, Any]:
+    """Detect query intent from natural language input.
+
+    Returns intent classification with confidence scores.
+    """
+    query_lower = query.lower()
+    is_full_chain = any(
+        marker in query_lower
+        for marker in ("全链路", "到底层", "full chain", "full-chain", "walkthrough")
+    )
+    intents: dict[str, float] = {}
+    matched_patterns: list[str] = []
+
+    # Phase 1: Keyword pattern matching
+    for intent, pattern in _QUERY_PATTERNS.items():
+        if pattern.search(query_lower):
+            intents[intent] = 1.0
+            matched_patterns.append(intent)
+
+    # Phase 2: Java naming convention inference
+    # 提取类名（取最后一段，例如 com.Foo.bar -> bar）
+    parts = query.replace(".", " ").replace("/", " ").split()
+    for part in parts:
+        for intent, pattern in _JAVA_PATTERNS.items():
+            if intent == "method" and len(parts) == 1 and "." not in query and "#" not in query:
+                continue
+            if pattern.search(part):
+                intents.setdefault(intent, 0)
+                intents[intent] = max(intents[intent], 0.8)
+
+    # Phase 2b: Ontology-aware entity classification (§5.1)
+    # Use EntityValidator to distinguish Service ≠ FeignClient
+    for part in parts:
+        if EntityValidator.is_feign_entity(part):
+            intents["feign"] = max(intents.get("feign", 0), 1.5)
+        elif EntityValidator.is_local_service(part):
+            intents["class"] = max(intents.get("class", 0), 1.0)
+    # Phase 3: Structure inference
+    if is_full_chain:
+        intents["chain"] = max(intents.get("chain", 0), 2.5)
+    if "/" in query and not query.startswith("/"):
+        intents.setdefault("endpoint", 0.8)
+    if "." in query and "::" not in query:
+        intents.setdefault("config", 0.6)
+    if "::" in query or "." in query:
+        intents.setdefault("class", 0.7)
+
+    # Phase 4: 优先级调整 — 更具体的实体类型优先
+    # feign/mq/endpoint 是契约级实体，优先级高于通用 class
+    is_feign_confirmed = any(EntityValidator.is_feign_entity(p) for p in parts)
+    is_service_confirmed = any(EntityValidator.is_local_service(p) for p in parts)
+    has_java_class_hint = any(_JAVA_PATTERNS["class"].search(p) for p in parts)
+
+    if "feign" in intents:
+        intents["feign"] = max(intents["feign"], 2.0)
+    if "mq" in intents:
+        intents["mq"] = max(intents["mq"], 2.0)
+    if "endpoint" in intents:
+        # endpoint 意图从命名约定或路径模式中检测到时也应提升
+        if query_lower.startswith("/") or any(
+            p.endswith("Controller") or p.endswith("Resource") or p.endswith("Api")
+            for p in parts
+        ):
+            intents["endpoint"] = max(intents["endpoint"], 2.0)
+
+    # class 意图只在以下情况提升到高位：
+    # - 看起来像 Java 符号名，且没有被 ontology 确认为 feign 或 endpoint
+    if _looks_like_java_symbol_query(query):
+        if is_feign_confirmed:
+            # ontology 确认是 Feign，降低 class 权重避免混淆
+            intents["class"] = max(intents.get("class", 0), 1.0)
+        elif any(p.endswith("Controller") or p.endswith("Resource") or p.endswith("Api") for p in parts):
+            # 命名约定表明是 endpoint，降低 class 权重
+            intents["class"] = max(intents.get("class", 0), 1.0)
+        elif is_service_confirmed or has_java_class_hint:
+            intents["class"] = max(intents.get("class", 0), 2.2)
+
+    # 当 ontology 确认是 feign 但 class 分数也高时，确保 feign 优先
+    if is_feign_confirmed and intents.get("feign", 0) > 0:
+        intents["feign"] = max(intents["feign"], intents.get("class", 0) + 0.5)
+
+    primary = max(intents.items(), key=lambda x: x[1])[0] if intents else "general"
+
+    return {
+        "primary_intent": primary,
+        "all_intents": intents,
+        "matched_patterns": matched_patterns,
+        "is_cross_service": any(k in query_lower for k in ["feign", "fegin", "远程", "rpc", "服务间"]),
+        "is_chain_query": "chain" in intents or "调用链" in query_lower,
+        "is_full_chain": is_full_chain,
+        "query_shape": "java_symbol" if _looks_like_java_symbol_query(query) else "general",
+        "prefer_class_symbol": _looks_like_java_symbol_query(query),
+    }
+
+
+def hybrid_retrieve(
+    graph: RuntimeStore,
+    workspace_file: str,
+    query: str,
+    config: HybridRetrievalConfig | None = None,
+    node_types: list[str] | None = None,
+    limit: int = 20,
+    freshness: dict[str, Any] | None = None,
+    learned_weights: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Execute hybrid retrieval combining graph, sparse, and semantic search.
+
+    This is the main entry point for intelligent code retrieval.
+    """
+    if config is None:
+        config = HybridRetrievalConfig()
+
+    intent = detect_query_intent(query)
+    from .policy_rules import load_purpose_deltas
+
+    policy = select_retrieval_policy(
+        intent,
+        freshness or {},
+        learned_weights or {},
+        purpose_deltas=load_purpose_deltas(workspace_file),
+    )
+    _rrf, _best_match = reciprocal_rank, best_match
+    tokens = tokenize(query)
+    source_limit = max(limit, policy.candidate_limit)
+    result_limit = min(limit, policy.evidence_budget) if intent.get("is_full_chain") else limit
+    active_sources = set(policy.sources)
+    started = time.perf_counter()
+    timings: dict[str, float] = {}
+    cache_key = _retrieval_cache_key(
+        graph,
+        workspace_file=workspace_file,
+        query=query,
+        node_types=node_types,
+        limit=limit,
+        config=config,
+        intent=intent,
+        policy=policy,
+        freshness=freshness or {},
+    )
+    cached = _get_cached_retrieval(cache_key)
+    if cached is not None:
+        diagnostics = cached.setdefault("retrieval_diagnostics", {})
+        diagnostics["cache"] = {"status": "hit", "ttl_seconds": _RETRIEVAL_CACHE_TTL_SECONDS}
+        diagnostics["timing_ms"] = {
+            "cache_lookup": round((time.perf_counter() - started) * 1000, 3),
+            "total": round((time.perf_counter() - started) * 1000, 3),
+        }
+        return cached
+
+    phase_started = time.perf_counter()
+
+    # Phase 1: execute only policy-selected sources.
+    exact_nodes = (
+        graph.find_nodes(_exact_lookup_query(query), types=node_types, limit=source_limit)
+        if "exact" in active_sources
+        else []
+    )
+    timings["exact"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
+    graph_hits = (
+        _graph_retrieval_from_nodes(exact_nodes, tokens, graph, node_types, source_limit, _rrf)
+        if "graph" in active_sources
+        else []
+    )
+    if intent.get("is_full_chain") and exact_nodes:
+        chain_anchors = [node for node in exact_nodes if _node_matches_query_name(node, query)]
+        graph_hits.extend(
+            _full_chain_neighbor_hits(
+                chain_anchors or exact_nodes[:1],
+                graph,
+                max_depth=policy.graph_depth,
+                limit=policy.candidate_limit,
+            )
+        )
+    timings["graph"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
+    sparse_hits = (
+        _sparse_retrieval_from_nodes(exact_nodes, source_limit, _rrf)
+        if "sparse" in active_sources
+        else []
+    )
+    retrieval_diagnostics: dict[str, Any] = {}
+    bm25_hits: list[RetrievalResult] = []
+    if config.enable_sparse_bm25 and "bm25" in active_sources:
+        bm25_hits = _bm25_sparse_retrieval(workspace_file, query, source_limit, diagnostics=retrieval_diagnostics)
+    else:
+        retrieval_diagnostics["bm25"] = {
+            "status": "disabled",
+            "reason": "configured_off" if not config.enable_sparse_bm25 else "policy_off",
+        }
+    timings["bm25"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
+
+    # Optional retrieval implementations and test doubles may return no
+    # diagnostics. Treat that as an unavailable index, never as evidence that
+    # a full sparse-semantic scan is redundant.
+    bm25_diagnostic = retrieval_diagnostics.setdefault(
+        "bm25", {"status": "unavailable", "reason": "missing_diagnostics"}
+    )
+    bm25_has_index = int(bm25_diagnostic.get("doc_count", 0) or 0) > 0
+    sparse_semantic = os.getenv("MEMORY_CENTER_SEMANTIC_BACKEND", "sparse").strip().lower() in {"", "sparse"}
+    if policy.semantic_enabled and config.enable_semantic and not (bm25_has_index and sparse_semantic):
+        semantic_hits = _semantic_retrieval(workspace_file, query, source_limit)
+        retrieval_diagnostics["semantic"] = {"status": "active", "returned": len(semantic_hits)}
+    else:
+        semantic_hits = []
+        if bm25_has_index and sparse_semantic:
+            reason = "redundant_sparse_semantic_bm25_active"
+        else:
+            reason = "configured_off" if not config.enable_semantic else "policy_off"
+        retrieval_diagnostics["semantic"] = {"status": "disabled", "reason": reason}
+    timings["semantic"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
+    vector_hits: list[RetrievalResult] = []
+    if config.enable_vector and policy.vector_enabled:
+        vector_hits = _vector_retrieval(
+            workspace_file,
+            query,
+            tokens,
+            source_limit,
+            diagnostics=retrieval_diagnostics,
+        )
+    else:
+        retrieval_diagnostics["vector"] = {
+            "status": "disabled",
+            "reason": "configured_off" if not config.enable_vector else "policy_off",
+        }
+    timings["vector"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
+    retrieval_diagnostics["policy"] = {
+        "status": "active",
+        **policy.to_dict(),
+        # Surface user-facing config intent so callers can correlate
+        # ``enable_vector=true`` requests with the actual ``vector_enabled``
+        # policy choice (the latter may stay False when the policy decided
+        # vector is not useful for the current intent, or when no dense
+        # vectors are available).
+        "enable_vector": config.enable_vector,
+        "enable_sparse_bm25": config.enable_sparse_bm25,
+        "enable_semantic": config.enable_semantic,
+    }
+    retrieval_diagnostics["parser_precision"] = parser_precision_from_workspace(workspace_file)
+    timings["diagnostics"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
+
+    # Phase 2: Merge and rank results
+    merged = _merge_retrieval_results(
+        graph_hits, sparse_hits, semantic_hits, vector_hits=vector_hits,
+        config=config,
+        intent=intent,
+        bm25_hits=bm25_hits,
+        query=query,
+    )
+
+    # Phase 3: Type-based boosting
+    if config.enable_type_boosting:
+        merged = _apply_type_boosting(merged, intent)
+    timings["merge_and_type_boost"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
+
+    if config.enable_graph_rank and merged:
+        seed_ids = [item.node_id for item in merged[:3]]
+        graph_scores = bounded_personalized_rank(
+            graph, seed_ids, max_depth=min(2, policy.graph_depth), frontier_limit=min(96, policy.candidate_limit * 3)
+        )
+        for item in merged:
+            score = graph_scores.get(item.node_id, 0.0)
+            if score:
+                item.score *= 1.0 + min(0.18, score * 0.3)
+                item.evidence["personalized_graph_score"] = round(score, 4)
+        merged.sort(key=lambda item: item.score, reverse=True)
+    timings["graph_rank"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
+
+    if config.enable_reranker and merged:
+        merged, reranker_diag = _rerank_candidates(query, merged, limit=min(12, source_limit))
+        retrieval_diagnostics["reranker"] = reranker_diag
+    else:
+        retrieval_diagnostics["reranker"] = {"status": "disabled", "reason": "configured_off"}
+    timings["reranker"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
+
+    # Phase 4: Neighbor enrichment (top results only for performance)
+    enrichment_budget = min(2, policy.evidence_budget) if intent.get("is_full_chain") else policy.evidence_budget
+    top_n = min(result_limit, 10, enrichment_budget)
+    for item in merged[:top_n]:
+        item.neighbors = graph.traverse_edges(
+            item.node_id,
+            direction="both",
+            max_depth=max(config.neighbor_depth, policy.graph_depth),
+            limit=config.neighbor_limit,
+        )
+    timings["neighbor_enrichment"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
+
+    # Phase 5: Cross-workspace resolution
+    if config.enable_cross_workspace:
+        _resolve_cross_workspace_refs(merged[:result_limit], graph, workspace_file)
+    timings["cross_workspace"] = _elapsed_ms(phase_started)
+    phase_started = time.perf_counter()
+
+    # Phase 6: Build summary
+    results = [item for item in merged if item.score >= config.min_confidence][:result_limit]
+
+    response = {
+        "query": query,
+        "intent": intent,
+        "results": [_result_to_dict(r) for r in results],
+        "total_found": len(merged),
+        "returned": len(results),
+        "retrieval_summary": _build_retrieval_summary(results, intent),
+        "progressive": _build_progressive_summary(results, intent),
+        "retrieval_diagnostics": retrieval_diagnostics,
+        "retrieval_policy": policy.to_dict(),
+        "config": {
+            "graph_weight": config.graph_weight,
+            "sparse_weight": config.sparse_weight,
+            "semantic_weight": config.semantic_weight,
+            "vector_weight": config.vector_weight,
+            "enable_sparse_bm25": config.enable_sparse_bm25,
+            "enable_semantic": config.enable_semantic,
+            "enable_vector": config.enable_vector,
+            "enable_graph_rank": config.enable_graph_rank,
+            "enable_reranker": config.enable_reranker,
+        },
+    }
+    timings["result_assembly"] = _elapsed_ms(phase_started)
+    retrieval_diagnostics["cache"] = {"status": "miss", "ttl_seconds": _RETRIEVAL_CACHE_TTL_SECONDS}
+    retrieval_diagnostics["timing_ms"] = {**timings, "total": _elapsed_ms(started)}
+    _cache_retrieval(cache_key, response)
+    return copy.deepcopy(response)
+
+
+def _retrieval_cache_key(
+    graph: RuntimeStore,
+    *,
+    workspace_file: str,
+    query: str,
+    node_types: list[str] | None,
+    limit: int,
+    config: HybridRetrievalConfig,
+    intent: dict[str, Any],
+    policy: Any,
+    freshness: dict[str, Any],
+) -> tuple[object, ...]:
+    """Bind cache entries to the published generation and effective read plan.
+
+    Runtime governance records share the SQLite backend with the graph, so its
+    file mtime changes on legitimate read-side audit writes. Index-control and
+    graph-summary instead change only when the published graph generation is
+    replaced or refreshed.
+    """
+
+    graph_path = getattr(graph, "db_path", None)
+    if graph_path is None:
+        # Keep the object alive while its cache entry exists so a released
+        # in-memory graph cannot have its id reused for unrelated results.
+        graph_version: tuple[object, ...] = ("ephemeral_graph", graph)
+    else:
+        try:
+            path = Path(graph_path)
+            from memory_center.core.storage.workspace import WorkspaceStore
+
+            store = WorkspaceStore(workspace_file)
+            control = store.read_json("index-control.json", {}) or {}
+            graph_summary = store.index_dir / "graph-summary.json"
+            graph_summary_version = (
+                (graph_summary.stat().st_mtime_ns, graph_summary.stat().st_size)
+                if graph_summary.exists()
+                else ("missing",)
+            )
+            graph_version = (
+                str(path.resolve()),
+                str(control.get("active_generation", "") or ""),
+                graph_summary_version,
+            )
+        except OSError:
+            graph_version = (str(graph_path), "unavailable")
+    config_values = tuple(sorted((key, repr(value)) for key, value in vars(config).items()))
+    intent_values = tuple(sorted((key, repr(value)) for key, value in intent.items()))
+    policy_values = tuple(sorted((key, repr(value)) for key, value in policy.to_dict().items()))
+    freshness_values = (
+        str(freshness.get("status", "") or ""),
+        str(freshness.get("staleness_level", "") or ""),
+        tuple(str(value) for value in freshness.get("changed_files", []) or []),
+        tuple(str(value) for value in freshness.get("pending_files", []) or []),
+    )
+    return (graph_version, query, tuple(sorted(node_types or [])), int(limit), config_values, intent_values, policy_values, freshness_values)
+
+
+def _get_cached_retrieval(key: tuple[object, ...]) -> dict[str, Any] | None:
+    now = time.monotonic()
+    with _RETRIEVAL_CACHE_LOCK:
+        cached = _RETRIEVAL_CACHE.get(key)
+        if cached is None:
+            return None
+        expires_at, value = cached
+        if expires_at <= now:
+            _RETRIEVAL_CACHE.pop(key, None)
+            return None
+        _RETRIEVAL_CACHE.move_to_end(key)
+        return copy.deepcopy(value)
+
+
+def _cache_retrieval(key: tuple[object, ...], value: dict[str, Any]) -> None:
+    with _RETRIEVAL_CACHE_LOCK:
+        _RETRIEVAL_CACHE[key] = (time.monotonic() + _RETRIEVAL_CACHE_TTL_SECONDS, copy.deepcopy(value))
+        _RETRIEVAL_CACHE.move_to_end(key)
+        while len(_RETRIEVAL_CACHE) > _RETRIEVAL_CACHE_MAX_ITEMS:
+            _RETRIEVAL_CACHE.popitem(last=False)
+
+
+def _elapsed_ms(started: float) -> float:
+    return round((time.perf_counter() - started) * 1000, 3)
+
+
+def _graph_retrieval(
+    graph: RuntimeStore,
+    query: str,
+    tokens: list[str],
+    node_types: list[str] | None,
+    limit: int,
+    _rrf: Any,
+) -> list[RetrievalResult]:
+    """Retrieve nodes via graph structure (neighbors of exact matches)."""
+    results: dict[str, RetrievalResult] = {}
+
+    # Find exact matches first
+    exact_nodes = graph.find_nodes(query, types=node_types, limit=limit)
+    for rank, node in enumerate(exact_nodes, start=1):
+        node_id = node["id"]
+        results[node_id] = RetrievalResult(
+            node_id=node_id,
+            node=node,
+            score=_rrf(rank) * 1.5,  # Boost exact matches
+            sources=["graph_exact"],
+        )
+
+    # Token-based fallback
+    if len(results) < limit // 2:
+        for token in tokens:
+            token_nodes = graph.find_nodes(token, types=node_types, limit=limit)
+            for rank, node in enumerate(token_nodes, start=1):
+                node_id = node["id"]
+                if node_id not in results:
+                    results[node_id] = RetrievalResult(
+                        node_id=node_id,
+                        node=node,
+                        score=_rrf(rank + 100),
+                        sources=["graph_token"],
+                    )
+
+    return list(results.values())
+
+
+def _sparse_retrieval(
+    graph: RuntimeStore,
+    query: str,
+    tokens: list[str],
+    node_types: list[str] | None,
+    limit: int,
+    _rrf: Any,
+) -> list[RetrievalResult]:
+    """Retrieve nodes via FTS/sparse search."""
+    results: dict[str, RetrievalResult] = {}
+
+    # Use FTS if available
+    fts_nodes = graph.find_nodes(query, types=node_types, limit=limit)
+    for rank, node in enumerate(fts_nodes, start=1):
+        node_id = node["id"]
+        results[node_id] = RetrievalResult(
+            node_id=node_id,
+            node=node,
+            score=_rrf(rank + 50),  # Lower priority than graph exact
+            sources=["sparse_fts"],
+        )
+
+    return list(results.values())
+
+
+
+def _graph_retrieval_from_nodes(
+    exact_nodes: list,
+    tokens: list[str],
+    graph: RuntimeStore,
+    node_types: list[str] | None,
+    limit: int,
+    _rrf: Any,
+) -> list[RetrievalResult]:
+    """Retrieve nodes via graph structure using pre-fetched exact matches."""
+    results: dict[str, RetrievalResult] = {}
+    for rank, node in enumerate(exact_nodes, start=1):
+        node_id = node["id"]
+        results[node_id] = RetrievalResult(
+            node_id=node_id,
+            node=node,
+            score=_rrf(rank) * 1.5,
+            sources=["graph_exact"],
+        )
+    # Token-based fallback only if needed
+    if len(results) < limit // 2:
+        for token in tokens:
+            token_nodes = graph.find_nodes(token, types=node_types, limit=limit)
+            for rank, node in enumerate(token_nodes, start=1):
+                node_id = node["id"]
+                if node_id not in results:
+                    results[node_id] = RetrievalResult(
+                        node_id=node_id,
+                        node=node,
+                        score=_rrf(rank + 100),
+                        sources=["graph_token"],
+                    )
+    return list(results.values())
+
+
+def _full_chain_neighbor_hits(
+    exact_nodes: list[dict[str, Any]],
+    graph: RuntimeStore,
+    *,
+    max_depth: int,
+    limit: int,
+) -> list[RetrievalResult]:
+    """Promote graph traversal endpoints into the full-chain evidence pool."""
+    exact_ids = {str(node.get("id", "")) for node in exact_nodes}
+    results: dict[str, RetrievalResult] = {}
+    per_anchor_limit = max(1, limit // max(1, len(exact_nodes)))
+    for exact in exact_nodes:
+        anchor_id = str(exact.get("id", ""))
+        if not anchor_id:
+            continue
+        for edge in graph.traverse_edges(
+            anchor_id,
+            direction="both",
+            max_depth=max_depth,
+            limit=per_anchor_limit,
+        ):
+            depth = max(1, int(edge.get("depth", 1) or 1))
+            for prefix in ("source", "target"):
+                neighbor_id = str(edge.get(f"{prefix}_id", ""))
+                nested = edge.get(prefix) if isinstance(edge.get(prefix), dict) else {}
+                if not neighbor_id or neighbor_id in exact_ids or neighbor_id in results:
+                    continue
+                node = {
+                    "id": neighbor_id,
+                    "type": nested.get("type", edge.get(f"{prefix}_type", "")),
+                    "name": nested.get("name", edge.get(f"{prefix}_name", "")),
+                    "project": nested.get("project", edge.get(f"{prefix}_project", "")),
+                    "file_path": nested.get("file_path", edge.get(f"{prefix}_file", "")),
+                    "line": nested.get("line", edge.get(f"{prefix}_line")),
+                }
+                if not node["name"]:
+                    continue
+                results[neighbor_id] = RetrievalResult(
+                    node_id=neighbor_id,
+                    node=node,
+                    score=0.9 / depth,
+                    sources=["graph_neighbor"],
+                    evidence={"edge_type": edge.get("type", ""), "depth": depth},
+                )
+    return list(results.values())
+
+
+def _sparse_retrieval_from_nodes(
+    exact_nodes: list,
+    limit: int,
+    _rrf: Any,
+) -> list[RetrievalResult]:
+    """Retrieve nodes via FTS using pre-fetched exact matches (avoids duplicate FTS)."""
+    results: dict[str, RetrievalResult] = {}
+    for rank, node in enumerate(exact_nodes, start=1):
+        node_id = node["id"]
+        results[node_id] = RetrievalResult(
+            node_id=node_id,
+            node=node,
+            score=_rrf(rank + 50),
+            sources=["sparse_fts"],
+        )
+    return list(results.values())
+
+
+def _semantic_retrieval(
+    workspace_file: str,
+    query: str,
+    limit: int,
+) -> list[RetrievalResult]:
+    """Retrieve nodes via semantic/embedding search."""
+    results: list[RetrievalResult] = []
+
+    try:
+        semantic_hits = semantic_query(workspace_file, query, limit=limit)
+        for rank, hit in enumerate(semantic_hits, start=1):
+            node_id = hit.get("node_id", "")
+            if not node_id:
+                continue
+            results.append(RetrievalResult(
+                node_id=node_id,
+                node={
+                    "id": node_id,
+                    "type": hit.get("type", ""),
+                    "name": hit.get("name", ""),
+                    "project": hit.get("project", ""),
+                    "file_path": hit.get("file_path", ""),
+                },
+                score=float(hit.get("score", 0.0)) * 0.8,  # Scale semantic scores
+                sources=["semantic"],
+                evidence={"semantic_rank": rank, "raw_score": hit.get("score", 0.0)},
+            ))
+    except Exception:
+        # Semantic search is optional; degrade gracefully
+        pass
+
+    return results
+
+
+def _vector_retrieval(
+    workspace_file: str,
+    query: str,
+    tokens: list[str],
+    limit: int,
+    diagnostics: dict[str, Any] | None = None,
+) -> list[RetrievalResult]:
+    """Retrieve nodes via ANN vector search when VectorIndex is available."""
+    results: list[RetrievalResult] = []
+    vector_diag: dict[str, Any] = {"status": "disabled", "reason": "not_checked"}
+    try:
+        from memory_center.core.retrieval.semantic import (
+            DEFAULT_SENTENCE_TRANSFORMER_MODEL,
+            _load_sentence_transformer_model,
+            semantic_index_stats,
+        )
+        from memory_center.core.storage.workspace import WorkspaceStore
+
+        from ..storage.runtime import RuntimeStore
+        from ..storage.vector_index import VectorIndex
+
+        workspace_store = WorkspaceStore(workspace_file)
+        unified = RuntimeStore(workspace_store.graph_db_path)
+        try:
+            vec = VectorIndex(unified)
+            status = vec.stats()
+            vector_diag = {"status": "empty", **status}
+            if status.get("embedding_count", 0) == 0:
+                return results
+            if status.get("ann_ready") is False and status.get("backend") != "exact_small":
+                vector_diag = {
+                    "status": "unavailable",
+                    "reason": status.get("reason", "ANN index unavailable"),
+                    "next_action": status.get("next_action", "vector-ann-rebuild"),
+                    **status,
+                }
+                return results
+
+            semantic_stats = semantic_index_stats(workspace_file)
+            model_name = (
+                semantic_stats.get("model")
+                or semantic_stats.get("requested_model")
+                or DEFAULT_SENTENCE_TRANSFORMER_MODEL
+            )
+            model = _load_sentence_transformer_model(model_name)
+            if model is None:
+                vector_diag = {
+                    "status": "unavailable",
+                    "reason": "sentence-transformers model unavailable for query embedding",
+                    "model": model_name,
+                    **status,
+                }
+                return results
+
+            query_vector = [float(value) for value in model.encode([query], normalize_embeddings=True)[0]]
+            vector_results = vec.query(query_vector, limit=limit)
+            if not vector_results:
+                query_diagnostics = vec.query_diagnostics()
+                vector_diag = {"status": query_diagnostics.get("status", "active"), "returned": 0, **status, **query_diagnostics}
+                return results
+
+            from memory_center.core.storage.runtime import RuntimeStore
+            with RuntimeStore(workspace_store.graph_db_path) as graph:
+                for rank, hit in enumerate(vector_results[:limit], start=1):
+                    node_id = hit.get("node_id", "")
+                    if not node_id:
+                        continue
+                    node = graph.node_by_id(node_id)
+                    if not node:
+                        continue
+                    score = float(hit.get("score", 0.0) or max(0.0, 1.0 - float(hit.get("distance", 1.0))))
+                    results.append(RetrievalResult(
+                        node_id=node_id,
+                        node=node,
+                        score=score,
+                        sources=["vector_ann"],
+                        evidence={"vector_rank": rank, "backend": hit.get("backend", "")},
+                    ))
+            vector_diag = {"status": "active", "returned": len(results), **status}
+        finally:
+            unified.close()
+    except Exception as exc:
+        vector_diag = diag_entry(DIAG.UNAVAILABLE, exc=exc)
+    finally:
+        if diagnostics is not None:
+            diagnostics["vector"] = vector_diag
+    return results
+
+
+
+def _bm25_sparse_retrieval(
+    workspace_file: str,
+    query: str,
+    limit: int,
+    diagnostics: dict[str, Any] | None = None,
+) -> list[RetrievalResult]:
+    """Retrieve nodes via BM25 InvertedIndex when available."""
+    results: list[RetrievalResult] = []
+    bm25_diag: dict[str, Any] = {"status": "disabled", "reason": "not_checked"}
+    try:
+        from memory_center.core.storage.workspace import WorkspaceStore
+
+        from ..retrieval.inverted import InvertedIndex
+        from ..storage.runtime import RuntimeStore
+
+        workspace_store = WorkspaceStore(workspace_file)
+        unified = RuntimeStore(workspace_store.graph_db_path)
+        try:
+            idx = InvertedIndex(unified)
+            stats = idx.stats()
+            if stats.get("doc_count", 0) == 0:
+                bm25_diag = {"status": "empty", **stats}
+                return results
+
+            bm25_results = idx.query(query, limit=limit)
+            if not bm25_results:
+                bm25_diag = {"status": "active", "returned": 0, **stats}
+                return results
+
+            from memory_center.core.storage.runtime import RuntimeStore
+            with RuntimeStore(workspace_store.graph_db_path) as graph:
+                for hit in bm25_results:
+                    node_id = hit.get("node_id", "")
+                    if not node_id:
+                        continue
+                    node = graph.node_by_id(node_id)
+                    if not node:
+                        continue
+                    results.append(RetrievalResult(
+                        node_id=node_id,
+                        node=node,
+                        score=float(hit.get("score", 0.0)),
+                        sources=["sparse_bm25"],
+                        evidence={"bm25_backend": hit.get("backend", "bm25_inverted")},
+                    ))
+            bm25_diag = {"status": "active", "returned": len(results), **stats}
+        finally:
+            unified.close()
+    except Exception as exc:
+        bm25_diag = {"status": "unavailable", "reason": str(exc)[:200]}
+    finally:
+        if diagnostics is not None:
+            diagnostics["bm25"] = bm25_diag
+    return results
+
+
+def _merge_retrieval_results(
+    graph_hits: list[RetrievalResult],
+    sparse_hits: list[RetrievalResult],
+    semantic_hits: list[RetrievalResult],
+    config: HybridRetrievalConfig,
+    intent: dict[str, Any],
+    query: str = "",
+    vector_hits: list[RetrievalResult] | None = None,
+    bm25_hits: list[RetrievalResult] | None = None,
+) -> list[RetrievalResult]:
+    """Merge results from all retrieval sources using RRF-inspired scoring.
+
+    Each source's scores are normalized to [0, 1] before weighting, so no
+    single source can dominate purely by scale.
+
+    The function is pure: caller-owned ``RetrievalResult`` instances are not
+    mutated, and the returned list contains freshly constructed objects.  This
+    matters when the same hit list is reused across multiple fusion calls
+    (e.g. in tests, ablations, or staged retrieval pipelines).
+    """
+    def _normalize(hits: list[RetrievalResult]) -> list[RetrievalResult]:
+        if not hits:
+            return hits
+        normalized = [copy.deepcopy(h) for h in hits]
+        max_score = max(h.score for h in normalized) or 1.0
+        for h in normalized:
+            h.score = h.score / max_score
+        return normalized
+
+    graph_hits = _normalize(graph_hits)
+    sparse_hits = _normalize(sparse_hits)
+    semantic_hits = _normalize(semantic_hits)
+    if vector_hits:
+        vector_hits = _normalize(vector_hits)
+    if bm25_hits:
+        bm25_hits = _normalize(bm25_hits)
+
+    merged: dict[str, RetrievalResult] = {}
+
+    # Process graph hits
+    for rank, item in enumerate(graph_hits, start=1):
+        if item.node_id in merged:
+            existing = merged[item.node_id]
+            existing.score += item.score * config.graph_weight
+            existing.sources.extend(item.sources)
+        else:
+            merged[item.node_id] = RetrievalResult(
+                node_id=item.node_id,
+                node=item.node,
+                score=item.score * config.graph_weight,
+                sources=item.sources.copy(),
+                evidence={"graph_rank": rank},
+            )
+
+    # Process sparse hits
+    for rank, item in enumerate(sparse_hits, start=1):
+        if item.node_id in merged:
+            existing = merged[item.node_id]
+            existing.score += item.score * config.sparse_weight
+            if "sparse" not in str(existing.sources):
+                existing.sources.extend(item.sources)
+        else:
+            merged[item.node_id] = RetrievalResult(
+                node_id=item.node_id,
+                node=item.node,
+                score=item.score * config.sparse_weight,
+                sources=item.sources.copy(),
+                evidence={"sparse_rank": rank},
+            )
+
+    # Process vector hits
+    if vector_hits:
+        for rank, item in enumerate(vector_hits, start=1):
+            if item.node_id in merged:
+                existing = merged[item.node_id]
+                existing.score += item.score * config.vector_weight
+                existing.sources.extend(item.sources)
+                existing.evidence["vector_rank"] = rank
+            else:
+                merged[item.node_id] = RetrievalResult(
+                    node_id=item.node_id,
+                    node=item.node,
+                    score=item.score * config.vector_weight,
+                    sources=item.sources[:],
+                    evidence={"vector_rank": rank},
+                )
+
+    # Process BM25 hits as a sparse retrieval source.
+    if bm25_hits:
+        for rank, item in enumerate(bm25_hits, start=1):
+            if item.node_id in merged:
+                existing = merged[item.node_id]
+                existing.score += item.score * config.sparse_weight
+                existing.sources.extend(item.sources)
+                existing.evidence["bm25_rank"] = rank
+            else:
+                merged[item.node_id] = RetrievalResult(
+                    node_id=item.node_id,
+                    node=item.node,
+                    score=item.score * config.sparse_weight,
+                    sources=item.sources.copy(),
+                    evidence={"bm25_rank": rank},
+                )
+
+    # Process semantic hits
+    for rank, item in enumerate(semantic_hits, start=1):
+        if item.node_id in merged:
+            existing = merged[item.node_id]
+            existing.score += item.score * config.semantic_weight
+            if "semantic" not in str(existing.sources):
+                existing.sources.extend(item.sources)
+        else:
+            merged[item.node_id] = RetrievalResult(
+                node_id=item.node_id,
+                node=item.node,
+                score=item.score * config.semantic_weight,
+                sources=item.sources.copy(),
+                evidence={"semantic_rank": rank},
+            )
+
+    # Multi-source bonus
+    for item in merged.values():
+        source_set = set(item.sources)
+        if len(source_set) >= 3:
+            item.score *= 1.3  # Triple-source bonus
+        elif len(source_set) >= 2:
+            item.score *= 1.15  # Dual-source bonus
+
+    strong_exact_hit = any(
+        _has_exact_like_source(item) and _node_matches_query_name(item.node, query)
+        for item in merged.values()
+    )
+    prefer_class_symbol = bool(intent.get("prefer_class_symbol"))
+    for item in merged.values():
+        source_set = set(item.sources)
+        semantic_only = source_set == {"semantic"}
+        if strong_exact_hit and semantic_only:
+            item.score *= 0.35 if not item.node.get("file_path") else 0.55
+            item.evidence["semantic_penalty"] = "strong_exact_present"
+        if semantic_only and (not item.node.get("project") or not item.node.get("file_path")):
+            item.score *= 0.7
+            item.evidence["semantic_penalty"] = "weak_locator"
+        if prefer_class_symbol and item.node.get("type") == "Class" and _node_matches_query_name(item.node, query):
+            item.score *= 1.8
+            item.evidence["symbol_exact_class_boost"] = 1.8
+
+    return sorted(merged.values(), key=lambda x: x.score, reverse=True)
+
+
+_RERANKER_MODELS: dict[str, Any] = {}
+_RERANKER_LOCK = Lock()
+_RERANKER_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="memory-center-reranker")
+_RERANK_TIMEOUT_SECONDS = 3.0
+
+
+def _load_reranker(model_name: str, allow_download: bool = False):
+    """仅由显式预热将模型载入当前 MCP 进程。"""
+    try:
+        from huggingface_hub import snapshot_download
+        from sentence_transformers import CrossEncoder
+
+        with _RERANKER_LOCK:
+            active = _RERANKER_MODELS.get(model_name)
+            if active is not None:
+                return active
+            local_path = snapshot_download(repo_id=model_name, local_files_only=not allow_download)
+            model = CrossEncoder(local_path)
+            # 一个 MCP 进程只有一个活跃重排模型。预热新模型明确替换旧模型，避免
+            # 管理面切换 profile 后无界占用内存。
+            _RERANKER_MODELS.clear()
+            _RERANKER_MODELS[model_name] = model
+            return model
+    except (ImportError, OSError, RuntimeError, ValueError):
+        return None
+
+
+def reranker_status(model_name: str | None = None) -> dict[str, Any]:
+    """报告本地重排器是否可立即使用，不访问网络。"""
+    selected = model_name or os.getenv("MEMORY_CENTER_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3").strip()
+    try:
+        from huggingface_hub import snapshot_download
+
+        local_path = snapshot_download(repo_id=selected, local_files_only=True)
+        if not _RERANKER_LOCK.acquire(blocking=False):
+            return {
+                "status": "prewarming",
+                "model": selected,
+                "local_path": str(local_path),
+                "process_scope": "loading_in_current_process",
+                "network_accessed": False,
+            }
+        try:
+            active = selected in _RERANKER_MODELS
+        finally:
+            _RERANKER_LOCK.release()
+        return {
+            "status": "ready" if active else "cached_not_prewarmed",
+            "model": selected,
+            "local_path": str(local_path),
+            "process_scope": "active" if active else "not_loaded_in_current_process",
+            "network_accessed": False,
+        }
+    except (ImportError, OSError, RuntimeError, ValueError):
+        return {
+            "status": "not_cached",
+            "model": selected,
+            "network_accessed": False,
+            "next_action": "run retrieval-reranker-prewarm explicitly in the MCP process before enabling rerank",
+        }
+
+
+def prewarm_reranker(model_name: str | None = None) -> dict[str, Any]:
+    """显式下载并加载模型，避免 MCP 请求链路承受首次下载成本。"""
+    selected = model_name or os.getenv("MEMORY_CENTER_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3").strip()
+    model = _load_reranker(selected, allow_download=True)
+    if model is None:
+        return {"status": "unavailable", "model": selected, "download_requested": True, "process_scope": "not_loaded"}
+    return {"status": "ready", "model": selected, "download_requested": True, "process_scope": "active"}
+
+
+def _rerank_candidates(
+    query: str,
+    candidates: list[RetrievalResult],
+    *,
+    limit: int,
+) -> tuple[list[RetrievalResult], dict[str, Any]]:
+    """仅重排有界候选，重模型失败时保留原始顺序。"""
+    model_name = os.getenv("MEMORY_CENTER_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3").strip()
+    if not _RERANKER_LOCK.acquire(blocking=False):
+        return candidates, {
+            "status": "unavailable",
+            "reason": "reranker_prewarming",
+            "model": model_name,
+            "next_action": "retry after the explicit reranker prewarm completes; query did not wait",
+        }
+    try:
+        model = _RERANKER_MODELS.get(model_name)
+    finally:
+        _RERANKER_LOCK.release()
+    if model is None:
+        return candidates, {
+            "status": "unavailable",
+            "reason": "reranker_not_prewarmed",
+            "model": model_name,
+            "next_action": "prewarm the reranker in this MCP process explicitly; query did not load or download a model",
+        }
+    selected = candidates[:limit]
+    pairs = [(query, _reranker_text(item.node)) for item in selected]
+    try:
+        future = _RERANKER_EXECUTOR.submit(model.predict, pairs)
+        raw_scores = future.result(timeout=_RERANK_TIMEOUT_SECONDS)
+        values = [float(value) for value in raw_scores]
+    except FutureTimeoutError:
+        return candidates, {
+            "status": "unavailable",
+            "reason": "reranker_timeout",
+            "model": model_name,
+            "next_action": "重排超出 3 秒预算，已保留原始排序；检查模型资源后再预热或重试。",
+        }
+    except (OSError, RuntimeError, ValueError) as exc:
+        return candidates, {"status": "unavailable", "reason": str(exc)[:160], "model": model_name}
+    if not values:
+        return candidates, {"status": "active", "returned": 0, "model": model_name}
+    low, high = min(values), max(values)
+    span = high - low or 1.0
+    reranked = [copy.deepcopy(item) for item in candidates]
+    for index, raw in enumerate(values):
+        item = reranked[index]
+        normalized = (raw - low) / span if high != low else 1.0
+        item.score = item.score * 0.45 + normalized * 0.55
+        item.evidence["reranker_score"] = round(raw, 4)
+        item.evidence["reranker_model"] = model_name
+    reranked.sort(key=lambda item: item.score, reverse=True)
+    return reranked, {"status": "active", "model": model_name, "candidates": len(selected)}
+
+
+def _reranker_text(node: dict[str, Any]) -> str:
+    return " ".join(str(node.get(key, "") or "") for key in ("type", "name", "project", "file_path"))
+
+
+def _apply_type_boosting(
+    results: list[RetrievalResult],
+    intent: dict[str, Any],
+) -> list[RetrievalResult]:
+    """Boost node types that match the detected query intent.
+
+    Uses ontology-aware type boosting: when intent is a specific contract type
+    (feign/mq/endpoint), unrelated structural types (Class/Service/Impl) are
+    not boosted, preventing confusion between e.g. a FeignClient and a local
+    Service with a similar name.
+
+    The function is pure: caller-owned ``RetrievalResult`` objects are not
+    mutated.  The returned list is a freshly sorted list of deep copies so
+    repeated calls produce stable input/output objects.
+    """
+    primary_intent = intent.get("primary_intent", "general")
+
+    type_boost_map = {
+        "feign": {"FeignClient": 1.5, "FeignMethod": 1.4, "Endpoint": 1.2},
+        "mq": {"MQTopic": 1.5, "MQConsumer": 1.4, "ConfigKey": 1.1},
+        "endpoint": {"Endpoint": 1.5, "Controller": 1.3, "Method": 1.2},
+        "config": {"ConfigKey": 1.5, "Field": 1.2},
+        "class": {"Class": 1.4, "Interface": 1.3, "Method": 1.2},
+        "method": {"Method": 1.4, "Function": 1.3},
+    }
+
+    # Contract-specific intents should penalize unrelated structural types
+    _contract_intents = {"feign", "mq", "endpoint"}
+    _contract_penalty_types = {"Class", "Service", "Impl", "Interface"}
+
+    boosts = type_boost_map.get(primary_intent, {})
+
+    cloned: list[RetrievalResult] = [copy.deepcopy(item) for item in results]
+    for item in cloned:
+        node_type = item.node.get("type", "")
+        boost = boosts.get(node_type, 1.0)
+
+        # Contract intent: penalize unrelated structural types to avoid confusion
+        if primary_intent in _contract_intents and node_type in _contract_penalty_types:
+            item.score *= 0.75
+            item.evidence["contract_penalty"] = 0.75
+
+        if intent.get("prefer_class_symbol"):
+            if node_type == "Class":
+                boost = max(boost, 1.8)
+            elif node_type == "Method":
+                item.score *= 0.82
+                item.evidence["symbol_method_penalty"] = 0.82
+        if boost > 1.0:
+            item.score *= boost
+            item.evidence["type_boost"] = boost
+
+    # Re-sort after boosting
+    cloned.sort(key=lambda x: x.score, reverse=True)
+    return cloned
+
+
+def _resolve_cross_workspace_refs(
+    results: list[RetrievalResult],
+    graph: RuntimeStore,
+    workspace_file: str,
+) -> None:
+    """Resolve cross-workspace references and add summary layer."""
+    # Load service topology for cross-workspace detection
+    try:
+        from memory_center.core.storage.workspace import WorkspaceStore
+        store = WorkspaceStore(workspace_file)
+        topology = store.read_json_prefer_backend("service-topology.json", {})
+        local_services = {svc.get("service_name") or svc.get("name") for svc in topology.get("services", [])}
+    except Exception:
+        local_services = set()
+
+    for item in results:
+        node = item.node
+        project = node.get("project", "")
+
+        # Check if this is a cross-workspace reference
+        if project and project not in local_services:
+            item.cross_workspace_refs.append({
+                "type": "external_service",
+                "project": project,
+                "node_name": node.get("name", ""),
+            })
+
+
+def _result_to_dict(result: RetrievalResult) -> dict[str, Any]:
+    """Convert RetrievalResult to dictionary.
+
+    Includes ontology-aware fields:
+    - semantic_strength: fact / inferred / derived (from _EDGE_SEMANTIC_STRENGTH)
+    - confidence_label: high / medium / low based on score and edge strength
+    """
+    # Determine semantic strength from evidence edges
+    strengths = set()
+    evidence_items: list[Any]
+    if isinstance(result.evidence, dict):
+        evidence_items = [result.evidence]
+    elif isinstance(result.evidence, list):
+        evidence_items = list(result.evidence)
+    else:
+        evidence_items = []
+
+    for ev in evidence_items:
+        if isinstance(ev, dict):
+            edge_type = ev.get("edge_type", "")
+        elif isinstance(ev, str):
+            # evidence may be a plain string like "CALLS_METHOD: Foo->Bar"
+            edge_type = ev.split(":")[0].strip() if ":" in ev else ev
+        else:
+            continue
+        if edge_type in _EDGE_SEMANTIC_STRENGTH:
+            strengths.add(_EDGE_SEMANTIC_STRENGTH[edge_type])
+
+    if strengths:
+        # Normalize extended ontology strengths to the public output contract.
+        normalized_strengths = []
+        for strength in strengths:
+            if strength == "confirmed":
+                normalized_strengths.append("fact")
+            elif strength == "runtime":
+                normalized_strengths.append("inferred")
+            elif strength in {"fact", "inferred", "derived"}:
+                normalized_strengths.append(strength)
+            else:
+                normalized_strengths.append("inferred")
+        priority = {"fact": 3, "inferred": 2, "derived": 1}
+        semantic_strength = max(normalized_strengths, key=lambda s: priority.get(s, 0))
+    else:
+        semantic_strength = "inferred"
+
+    # Map score to confidence label
+    if result.score >= 0.7:
+        confidence_label = "high"
+    elif result.score >= 0.4:
+        confidence_label = "medium"
+    else:
+        confidence_label = "low"
+
+    return {
+        "node_id": result.node_id,
+        "node": result.node,
+        "score": round(result.score, 4),
+        "sources": result.sources,
+        "evidence": result.evidence,
+        "neighbor_count": len(result.neighbors),
+        "cross_workspace_refs": result.cross_workspace_refs,
+        "semantic_strength": semantic_strength,
+        "evidence_level": evidence_level_for(
+            {"semantic_strength": semantic_strength, "evidence": result.evidence}
+        ),
+        "confidence_label": confidence_label,
+    }
+
+
+def _build_retrieval_summary(
+    results: list[RetrievalResult],
+    intent: dict[str, Any],
+) -> dict[str, Any]:
+    """Build summary of retrieval results."""
+    source_counts = {"graph": 0, "sparse": 0, "semantic": 0, "vector": 0}
+    type_counts: dict[str, int] = {}
+
+    for item in results:
+        for source in item.sources:
+            if "graph" in source:
+                source_counts["graph"] += 1
+            elif "sparse" in source or "fts" in source:
+                source_counts["sparse"] += 1
+            elif "semantic" in source:
+                source_counts["semantic"] += 1
+            elif "vector" in source:
+                source_counts["vector"] += 1
+
+        node_type = item.node.get("type", "unknown")
+        type_counts[node_type] = type_counts.get(node_type, 0) + 1
+
+    return {
+        "total_results": len(results),
+        "source_distribution": source_counts,
+        "type_distribution": type_counts,
+        "primary_intent": intent.get("primary_intent", "general"),
+        "is_cross_service": intent.get("is_cross_service", False),
+        "avg_score": round(sum(r.score for r in results) / max(len(results), 1), 4),
+    }
+
+
+def _build_progressive_summary(
+    results: list[RetrievalResult],
+    intent: dict[str, Any],
+) -> dict[str, Any]:
+    """Build progressive disclosure summary for quick understanding."""
+    top_nodes = results[:3]
+
+    return {
+        "level_1_quick": {
+            "count": len(results),
+            "top_matches": [
+                {
+                    "type": r.node.get("type", ""),
+                    "name": r.node.get("name", ""),
+                    "project": r.node.get("project", ""),
+                    "score": round(r.score, 2),
+                }
+                for r in top_nodes
+            ],
+            "intent": intent.get("primary_intent", "general"),
+        },
+        "level_2_details": {
+            "sources_breakdown": {
+                "graph_exact": sum(1 for r in results if "graph_exact" in r.sources),
+                "graph_token": sum(1 for r in results if "graph_token" in r.sources),
+                "sparse_fts": sum(1 for r in results if "sparse_fts" in r.sources),
+                "semantic": sum(1 for r in results if "semantic" in r.sources),
+                "vector": sum(1 for r in results if any("vector" in source for source in r.sources)),
+            },
+            "cross_workspace_count": sum(1 for r in results if r.cross_workspace_refs),
+            "has_chain_results": intent.get("is_chain_query", False),
+        },
+        "level_3_next_actions": _suggest_next_actions(results, intent),
+    }
+
+
+def _suggest_next_actions(
+    results: list[RetrievalResult],
+    intent: dict[str, Any],
+) -> list[str]:
+    """Suggest next actions based on retrieval results."""
+    actions = []
+
+    if not results:
+        actions.append("尝试更具体的查询词")
+        return actions
+
+    primary_intent = intent.get("primary_intent", "general")
+
+    if primary_intent == "feign":
+        actions.append("调用 memory_context 查看 Feign 客户端详情")
+        actions.append("调用 memory_callers 查找谁在调用这个 Feign")
+    elif primary_intent == "mq":
+        actions.append("调用 memory_context 查看 Topic/Consumer 详情")
+        actions.append("检查 mq-index.json 获取完整消息链路")
+    elif primary_intent == "endpoint":
+        actions.append("调用 memory_context 查看 API 端点详情")
+        actions.append("调用 memory_callers 查找前端调用方")
+    elif primary_intent == "chain":
+        actions.append("调用 memory_callers 或 memory_callees 追踪完整调用链")
+    else:
+        actions.append("对 top 结果调用 memory_context 深挖")
+        actions.append("修改代码前调用 mc_analyze 检查影响面")
+
+    if intent.get("is_cross_service"):
+        actions.append("注意跨服务边界，可能需要查看多个项目的索引")
+
+    return actions

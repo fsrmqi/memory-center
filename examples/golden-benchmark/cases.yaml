@@ -1,0 +1,29 @@
+schema_version: 1
+cases:
+  - case_id: article-move-full-chain
+    query: com.example.task.ArticleMoveService#move
+    mode: walkthrough
+    expected_anchors:
+      - ArticleMoveService#move
+      - ArticleMoveService#validateMove
+      - ArticleAuditServiceImpl#recordMove
+      - ArticleController#moveArticle
+      - ArticleWorkflowServiceImpl#moveArticle
+    expected_edges:
+      - CALLS_METHOD
+      - IMPLEMENTS_FEIGN
+      - HANDLES_ENDPOINT
+    forbidden_anchors:
+      - WrongController#list
+    max_latency_ms: 5000
+
+  - case_id: article-move-hybrid-policy
+    query: ArticleMoveService#move 全链路
+    mode: hybrid
+    expected_anchors:
+      - ArticleMoveService#move
+      - ArticleController#moveArticle
+    expected_edges: []
+    forbidden_anchors:
+      - WrongController#list
+    max_latency_ms: 5000

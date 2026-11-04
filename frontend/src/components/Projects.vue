@@ -1,0 +1,50 @@
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { action, api, states, type Workspace } from '../api'
+import SubmittedTask from './SubmittedTask.vue'
+const submitted=ref<any>(null)
+import Pagination from './Pagination.vue'
+import StorageUsage from './StorageUsage.vue'
+import ProjectSync from './ProjectSync.vue'
+import { usePagination } from '../pagination'
+const props = defineProps<{ workspaces: Workspace[]; selected: string }>()
+const emit = defineEmits<{ refresh: []; select: [id:string] }>()
+const filter = ref(''), status = ref(''), editing = ref<Workspace|null>(null), form = ref(false)
+const engine = ref('auto'), settingsRevision = ref(0)
+const embeddingMode = ref('inherit'), embeddingRevision = ref(0)
+const name = ref(''), root = ref(''), preview = ref<any>(null), busy = ref(false)
+const filtered=computed(()=>props.workspaces.filter(w=>(!status.value||w.status===status.value)&&(w.name+w.root).toLowerCase().includes(filter.value.toLowerCase())))
+const projectPager=usePagination(()=>filtered.value)
+const freshness=ref<Record<string,any>>({})
+const freshLabels:Record<string,string>={config_changed:'项目配置需更新',unchecked:'尚未检查',current:'最新',changed:'源码已变化',not_indexed:'待索引',baseline_required:'待更新基线',error:'检查失败'}
+let freshnessSequence=0, freshnessTimer:ReturnType<typeof setInterval>
+async function loadFreshness(){const seq=++freshnessSequence;const result=await Promise.all(projectPager.rows.value.map(async item=>{try{return [item.workspace_id,await api(`/workspaces/${item.workspace_id}/sync-status`)] as const}catch{return [item.workspace_id,null] as const}}));if(seq===freshnessSequence)for(const [id,value] of result)if(value)freshness.value[id]=value}
+watch(()=>projectPager.rows.value.map(row=>row.workspace_id).join(','),()=>{void loadFreshness()},{immediate:true})
+onMounted(()=>{freshnessTimer=setInterval(()=>{void loadFreshness()},15000)})
+onUnmounted(()=>{freshnessSequence++;clearInterval(freshnessTimer)})
+const serviceFilter=ref('')
+const servicePager=usePagination(()=>props.workspaces.find(w=>w.workspace_id===props.selected)?.services.filter(s=>(s.name+s.service_id+s.path+s.type).toLowerCase().includes(serviceFilter.value.toLowerCase()))||[])
+watch([filter,status],projectPager.reset)
+watch(()=>props.selected,()=>{serviceFilter.value='';servicePager.reset()})
+watch(serviceFilter,servicePager.reset)
+async function open(item?:Workspace) { editing.value=item||null; name.value=item?.name||''; root.value=item?.root||''; preview.value=null; engine.value='auto'; settingsRevision.value=0; embeddingMode.value='inherit'; embeddingRevision.value=0; form.value=true; if(item) { busy.value=true; await action(async()=>{const settings=await api(`/workspaces/${item.workspace_id}/analysis-settings`);engine.value=settings.engine;settingsRevision.value=settings.revision;const vectors=await api(`/workspaces/${item.workspace_id}/embedding-settings`);embeddingMode.value=vectors.mode;embeddingRevision.value=vectors.revision},'');busy.value=false } }
+async function inspect() { busy.value=true; await action(async()=>{ preview.value=await api('/workspaces/preview','POST',{root:root.value,...(editing.value?{workspace_id:editing.value.workspace_id}:{})}) },'目录识别完成'); busy.value=false }
+async function save() { busy.value=true; await action(async()=>{ const item=editing.value; const result=await api(item?'/workspaces/'+item.workspace_id:'/workspaces',item?'PATCH':'POST',item?{name:name.value,revision:item.revision,...(root.value!==item.root?{root:root.value}:{})}:{name:name.value,root:root.value});await api(`/workspaces/${result.workspace_id}/analysis-settings`,'PUT',{engine:engine.value,revision:settingsRevision.value});await api(`/workspaces/${result.workspace_id}/embedding-settings`,'PUT',{mode:embeddingMode.value,revision:embeddingRevision.value});form.value=false;emit('select',result.workspace_id);emit('refresh') },'项目已保存');busy.value=false }
+async function toggle(item:Workspace) { await action(async()=>{await api(`/workspaces/${item.workspace_id}/${item.status==='paused'?'resume':'pause'}`,'POST',{revision:item.revision});emit('refresh')}) }
+async function remove(item:Workspace) { if(!window.confirm(`移除 ${item.name} 的接入？源码与服务数据会保留。`))return;await action(async()=>{await api(`/workspaces/${item.workspace_id}?revision=${item.revision}`,'DELETE');emit('refresh')},'已移除项目接入') }
+async function index(item:Workspace) { await action(async()=>{submitted.value=await api(`/workspaces/${item.workspace_id}/index`,'POST');emit('refresh')},'索引任务已进入队列') }
+</script>
+<template>
+<SubmittedTask v-if="submitted" :task="submitted" type="index"/>
+  <div class="page-title"><div><h1>项目管理</h1><p>管理接入的项目、服务划分与源码索引。</p></div><button class="primary" @click="open()">添加项目</button></div>
+  <div class="toolbar"><input v-model="filter" aria-label="搜索项目" placeholder="搜索项目名称或目录"><select v-model="status" aria-label="项目状态"><option value="">全部状态</option><option value="active">已接入</option><option value="paused">已暂停</option></select></div>
+  <div class="table-wrap"><table><thead><tr><th>项目</th><th>源码目录</th><th>服务数</th><th>状态</th><th>索引</th><th>操作</th></tr></thead><tbody><tr v-for="item in projectPager.rows.value" :key="item.workspace_id" :class="{selected:item.workspace_id===selected}"><td><button class="link" @click="emit('select',item.workspace_id)">{{item.name}}</button></td><td class="path">{{item.root}}</td><td>{{item.services.length}}</td><td><span :class="['state',item.status]">{{states[item.status]}}</span></td><td class="project-freshness"><strong>{{freshLabels[freshness[item.workspace_id]?.state]||states[item.index_status||'not_indexed']||item.index_status}}</strong><small v-if="freshness[item.workspace_id]?.changed_files">变化 {{freshness[item.workspace_id].changed_files}} 文件</small><small v-if="freshness[item.workspace_id]?.last_success_at">成功于 {{new Date(freshness[item.workspace_id].last_success_at).toLocaleString('zh-CN',{hour12:false})}}</small><small v-if="freshness[item.workspace_id]?.schedule_state==='blocked'" class="error">自动调度已停止</small></td><td class="actions"><button @click="index(item)" :disabled="item.status!=='active'">索引</button><button @click="toggle(item)">{{item.status==='paused'?'恢复':'暂停'}}</button><button @click="open(item)">编辑</button><button class="danger" @click="remove(item)">移除</button></td></tr></tbody></table></div>
+  <Pagination :page="projectPager.page.value" :page-size="projectPager.pageSize.value" :total="projectPager.total.value" :pages="projectPager.pages.value" label="项目列表" @change="projectPager.page.value=$event" @size="projectPager.pageSize.value=$event;projectPager.reset()"/>
+  <p v-if="!projectPager.total.value" class="empty">{{workspaces.length?'没有匹配的项目，请调整筛选条件。':'还没有项目。添加服务端可访问的源码目录开始使用。'}}</p>
+  <ProjectSync v-if="selected&&workspaces.find(w=>w.workspace_id===selected)" :key="selected" :workspace="selected" @checked="loadFreshness"/>
+  <StorageUsage v-if="workspaces.find(w=>w.workspace_id===selected)" :workspace-id="selected" :name="workspaces.find(w=>w.workspace_id===selected)!.name"/>
+  <section v-if="workspaces.find(w=>w.workspace_id===selected)" class="detail"><h2>服务划分</h2><input v-model="serviceFilter" aria-label="筛选服务" placeholder="搜索服务名称、类型或路径"><p class="muted">索引代际：{{workspaces.find(w=>w.workspace_id===selected)?.generation||'尚未建立'}}</p><table><thead><tr><th>服务名称</th><th>服务 ID</th><th>类型</th><th>相对路径</th></tr></thead><tbody><tr v-for="service in servicePager.rows.value" :key="service.service_id"><td>{{service.name}}</td><td class="mono">{{service.service_id}}</td><td>{{service.type}}</td><td>{{service.path}}</td></tr></tbody></table><Pagination :page="servicePager.page.value" :page-size="servicePager.pageSize.value" :total="servicePager.total.value" :pages="servicePager.pages.value" label="服务划分" @change="servicePager.page.value=$event" @size="servicePager.pageSize.value=$event;servicePager.reset()"/><p class="muted">首次登记后请启动索引。源码只读，索引和记忆保存在服务数据目录。</p></section>
+  <dialog :open="form" v-if="form"><form @submit.prevent="save"><h2>{{editing?'编辑项目':'添加项目'}}</h2><label>项目名称<input v-model="name" required maxlength="120"></label><label>源码目录<input v-model="root" required placeholder="/projects/demo" :disabled="!!editing&&editing.status!=='paused'"></label><p v-if="editing&&editing.status!=='paused'" class="muted">修改目录前先暂停项目。</p><label>影响分析引擎<select v-model="engine" :disabled="busy"><option value="auto">自动（默认，按命中符号语言选择）</option><option value="generic">通用多语言分析</option><option value="java">Java / Spring 专用分析</option></select></label><p class="muted">自动模式：Java 符号使用专用分析，其他语言使用通用分析。切换无需重建索引。</p><label>向量化范围<select aria-label="向量化范围" v-model="embeddingMode" :disabled="busy"><option value="inherit">跟随全局模型配置（默认）</option><option value="off">关闭（代码图 + 关键词）</option><option value="knowledge">仅 Wiki / 记忆（源码不向量化）</option><option value="all">全部内容（源码 + Wiki / 记忆）</option></select></label><p class="muted">符号、调用图和关键词索引始终可用。关闭立即停止查询侧向量调用；保存不自动重建。首次启用或扩大范围后请手动索引。进行中的向量化任务请先取消，再保存设置并重建。</p><button type="button" @click="inspect" :disabled="busy">识别预览</button><pre v-if="preview">{{JSON.stringify(preview.services,null,2)}}</pre><div class="dialog-actions"><button type="button" @click="form=false">取消</button><button class="primary" :disabled="busy||!name||!root">保存项目</button></div></form></dialog>
+</template>
+
+<style scoped>.project-freshness{min-width:150px}.project-freshness small{display:block;margin-top:6px;color:#667085;font-size:12px}.project-freshness .error{color:#b42318}</style>

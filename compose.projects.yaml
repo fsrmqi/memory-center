@@ -1,0 +1,10 @@
+# 可选的源码只读挂载；必须显式指定宿主上的源码父目录。
+services:
+  memory-center:
+    volumes:
+      - type: bind
+        source: ${MEMORY_CENTER_PROJECTS_DIR:?请设置源码父目录 MEMORY_CENTER_PROJECTS_DIR}
+        target: /projects
+        read_only: true
+        bind:
+          create_host_path: false

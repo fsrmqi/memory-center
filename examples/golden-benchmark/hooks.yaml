@@ -1,0 +1,84 @@
+version: '1.0'
+hooks:
+  session_start:
+    facade: mc_start
+    mode: soft
+    params:
+      intent_from: event
+      auto_sync_mode: balanced
+      budget: small
+      view: compact
+    timeout: 30
+    async: true
+  pre_edit:
+    facade: mc_analyze
+    mode: guard
+    params:
+      target_from: tool_input_file
+      depth: quick
+      change_type: general
+    filter:
+      tool_matcher: Edit|Write
+      file_patterns:
+      - '**/common-api/**/*.java'
+      - '**/*Feign*.java'
+      - '**/*Message.java'
+      - '**/*DTO.java'
+    timeout: 15
+    async: true
+  session_stop:
+    facade: mc_close
+    mode: soft
+    params:
+      session_id_from: file
+      outcome: session ended
+    cleanup:
+    - delete_session_id_file
+    timeout: 15
+    async: true
+  user_prompt_submit:
+    enabled: false
+    facade: mc_start
+    mode: suggest
+    prompt_template: 'The user submitted a prompt. Always treat this hook as advisory
+      only:
+
+      do not block, stop, or deny the operation solely because the prompt is short,
+
+      ambiguous, or open-ended.
+
+
+      If the prompt is a continuation phrase such as: 下一步, 继续, 接着, 继续这个, 往下做, 继续处理,
+      continue, next step, keep going —
+
+      respond with: {"decision":"allow","reason":"Continuation request detected —
+      prefer mc_resume to continue the current task/session context; if no active
+      context exists, then mc_start may be used."}.
+
+
+      If the prompt clearly involves modifying code, understanding architecture,
+
+      tracing call chains, analyzing impact, debugging, or any Spring Cloud task —
+
+      respond with: {"decision":"allow","reason":"Coding task detected — recommend
+      calling mc_start first to load workspace context."}.
+
+
+      If the prompt contains Class#method and asks for 全链路, 到底层, 最底层, full chain,
+      or trace to sink —
+
+      recommend mc_lookup(mode="walkthrough") or mc_lookup(mode="auto") and follow
+      the returned summary_lines / continuations.
+
+      When walkthrough returns absolute_file_path, read that path directly; do not
+      use find, grep -l, rg --files, or IDE search to locate the same Controller/ServiceImpl.
+
+
+      For simple questions or non-code topics — respond with: {"decision":"allow",
+
+      "reason":"Not a coding task, no Memory Center context needed."}.
+
+      The prompt content: $ARGUMENTS
+
+      '
+    timeout: 10

@@ -1,0 +1,2977 @@
+# Changelog / 更新日志
+
+## 5.0.0b28 — 单仓库开源：历史重写与内部资料出库 / Single-repository open source
+
+### 变更 / Changed
+
+- **发布模型简化**：不再采用"私有仓 + 公开快照仓"双仓模型。本项目转为**单一仓库**（同时作为公开仓库），开发历史在开源时一次性重写为干净的起始提交，此后提交即公开内容。
+- **内部资料出库**：内部路线、实施回执、真实工作区基准与第三方调研目录改为仓库外本地资料，`/docs-internal/` 加入 `.gitignore`，不再随仓库分发；旧历史与内部资料以本地 git bundle 与压缩包形式备份（见 `docs/PUBLISHING.md`）。
+- **发布文档改写**：`docs/PUBLISHING.md` 说明单仓模型、日常提交自查规则、测试前置（先构建管理页）与公开仓首次后台设置清单（可见性、About、历史 dependabot PR、必要时联系 GitHub Support 清理不可达对象）。
+- **导出工具定位调整**：`scripts/public_release.sh` 从"日常发布流水线"改为可选的干净导出工具，用于导出不含内部资料的源码树或需要再次从零起步时重建历史；日常发布不再需要它。
+- **版本同步**：包、前端、Compose 与当前版本文档同步至 5.0.0b28。
+
+The project moves from a two-repository model (private repo + exported public snapshot) to a
+**single repository** that is also the public one: the pre-open-source history was rewritten
+once into a clean initial commit, and every subsequent commit is publishable content. Internal
+roadmaps, receipts, benchmarks and third-party research now live outside the repository
+(`/docs-internal/` is git-ignored) with a local bundle backup of the old history. `docs
+/PUBLISHING.md` documents the single-repository model, the pre-commit self-check, the admin-page
+build prerequisite for tests, and the one-time GitHub settings; `scripts/public_release.sh`
+becomes an optional clean-export tool instead of the daily release path.
+
+## 5.0.0b27 — 开源就绪：仓库卫生与发布面 / Open-source readiness: repository hygiene and public surface
+
+### 新增 / Added
+
+- **公开快照发布流程**：新增 `scripts/public_release.sh`、仓库根 `.gitattributes`（`export-ignore` 规则）与 `docs/PUBLISHING.md`。私有仓保留完整历史与内部资料，公开发布时用 `git archive` 导出脱敏后的树并作为独立首个提交发布，公开仓库因此不含任何私有提交；发布前的门禁检查私有标识、真实家目录、凭证模式、内部路径、必备文件与 Markdown 断链，任一不过即失败且不影响私有仓。
+- **许可证与第三方声明**：`LICENSE` 替换为 Apache License 2.0 官方全文（含附录与版权行），新增 `NOTICE` 声明前端 bundle 内含的 MIT 依赖；`MANIFEST.in` 随包分发 `NOTICE`。
+- **CI 与协作模板入库**：`.github/` 不再被忽略，纳入 CI（Python 3.11 必过、3.12 实验性）、issue/PR 模板、dependabot 与 Python 编码约定；CI 的 lint 分为「阻断语法/未定义名」与「全量 ruff 建议性」两步。
+- **贡献与许可入口**：README 末尾新增贡献指引与标准 Apache-2.0 许可段（链接 `LICENSE`/`NOTICE` 与发布文档）。
+
+Added a public-snapshot release flow (`scripts/public_release.sh`, root `.gitattributes` `export-ignore` rules, `docs/PUBLISHING.md`), the full Apache-2.0 `LICENSE` text plus a `NOTICE` for bundled MIT frontend dependencies, version-controlled `.github/` CI and collaboration templates, and README contributing/license sections. The public repository is produced by exporting a sanitized tree and publishing it as its own first commit, so no private commit ever reaches it.
+
+### 变更 / Changed
+
+- **仓库卫生**：示例目录中的 24 个生成物（`graph.db`、`index/*.json`、`store.lock`）与第三方 awesome 清单不再入库，改为可由 `memory-center reindex` 重建；`.gitignore` 补齐示例生成物、`.env`、`compose.override.yaml`、`.worktrees/`、`.gitnexus/` 等缺口。
+- **公开文档脱敏**：移除公司/工程标识、个人绝对路径、真实业务 FQN 与示例、真实工作区规模指标、内部排期与协作记录、售前/面试话术附录；内部路线、实现回执、真实工作区基准与竞品调研移出公开文档集合，不再随仓库发布（公开面只保留使用与贡献文档、CHANGELOG 与 ADR）。README、CHANGELOG、架构、用户指南、参考、平台/目录/服务指南均按此口径改写，历史条目中的死链改为纯文字引用。
+- **测试与配置清理**：`memory_center/core/indexing/java_ir.py` 修正 `FileRecord`/`SymbolRecord` 的前向引用（F821）；文档契约测试与回归测试不再断言已移出公开面的内部计划文档；`pyproject.toml` 中测试排除项的内部分批说明改为中性表述。
+- **版本同步**：包、前端、Compose 与当前版本文档同步至 5.0.0b27。
+
+Repository hygiene (generated example artifacts and unrelated third-party lists are no longer tracked and can be rebuilt with `memory-center reindex`; `.gitignore` gaps closed), public-document desensitization (company/project identifiers, personal paths, real business examples and scale metrics, internal schedules and sales/interview appendices removed; internal plans, receipts and benchmarks are no longer part of the published document set), a forward-reference lint fix in `java_ir.py`, and version synchronization to 5.0.0b27.
+
+## 5.0.0b26 — 工程约定 profile 化 / Pluggable workspace profiles
+
+### 新增 / Added
+
+- 新增 **Workspace profile（工作区约定）**：`workspace.yaml` 可选顶层 `profile:`，或使用环境变量 `MEMORY_CENTER_PROFILE`。profile 是 YAML **数据**而不是代码插件，承载团队自己的模块别名、默认 scope、Wiki 拓扑、声明式配置抽取规则与弱信号词；空 profile 为中性默认，全部功能按中性默认运行，不抛错、不需要迁移。
+- profile 的三种来源与优先级（先命中者生效）：**显式参数 > `workspace.yaml` 的 `profile:` > 环境变量 `MEMORY_CENTER_PROFILE` > 中性默认**。新增 `profile_for_workspace(workspace_file)` 按工作区声明解析；workspace 文件不存在或无声明时回退到环境变量／默认。显式参数与 `MEMORY_CENTER_PROFILE` 的值可以是 profile 名（在 `$MEMORY_CENTER_PROFILE_DIR` 或 `~/.memory-center/profile.d/` 下查找 `<name>.yaml|.yml`），也可以是文件路径；显式声明的名字找不到时抛 `ProfileError`，明确失败而不是静默回退到默认。
+- 新增 `examples/profile/profile.example.yaml`（中性示例）与 `tests/domain/test_profiles.py`（profile 解析、文件缓存、来源优先级与声明式配置抽取的单元测试）；README 增加中英双语 profile 说明，包、前端、Compose 与当前版本文档同步至 5.0.0b26。
+
+Added workspace profiles: `workspace.yaml` may declare an optional top-level `profile:`, or `MEMORY_CENTER_PROFILE` may be used. A profile is YAML data, not a code plugin, and carries team-owned module aliases, a default scope, Wiki topology, declarative config extraction rules and weak tokens; an empty profile is a neutral default under which every feature keeps running, without errors or migration. Sources resolve in this order (first match wins): explicit argument > `profile:` in `workspace.yaml` > `MEMORY_CENTER_PROFILE` > neutral default. The new `profile_for_workspace(workspace_file)` resolves a workspace declaration and falls back to the env/default when the file or the declaration is absent; explicit and env values may be a profile name (looked up as `<name>.yaml|.yml` under `$MEMORY_CENTER_PROFILE_DIR` or `~/.memory-center/profile.d/`) or a file path, and an explicitly declared name that cannot be found raises `ProfileError` instead of silently falling back. `examples/profile/profile.example.yaml` and `tests/domain/test_profiles.py` are added, README documents the profile contract in Chinese and English, and the package, frontend, Compose and current version docs move to 5.0.0b26.
+
+### 兼容性与行为变更 / Compatibility and behavior changes
+
+- **[Breaking] `module_routing.reason`**：`assistant_memory` promote 的原因码由 `company_module_alias` 改为 `module_alias`；`valid_until` 在 profile 未设置过期时为空串；开源版不再内置任何公司别名与兜底提示，改由 profile 的 `module_aliases` / `module_alias_until` / `module_alias_hint` 提供。
+- **[Breaking] promote 未登记 module** 的错误信息不再附带内置公司兜底文案，仅追加 profile 的 `module_alias_hint`。
+- **[Breaking] `assistant_admin` validate** 不再默认要求某个治理文件；必填治理文件改由 `wiki.governance_paths` 提供，空 profile 表示没有必填项。
+- **[Behavior] `assistant_admin` analyze** 的 `structure.missing_top_level` / `unexpected_top_level` 改由 `wiki.top_level_dirs` 计算；未配置时两者均为空（跳过拓扑校验），不再使用内置顶层目录清单。
+- **[Breaking] 知识页投影与 wiki-assets-sync**：`workspace_knowledge_summary` 与 wiki-assets-sync 不再默认 scope 为某公司；未配置 scope 时返回结构化 `not_configured`（`scope=null`、`scope_state` / `binding_reason_code=not_configured`、`related_wiki=[]`），不抛错。wiki-assets-sync 在空 profile 下返回 `synced=true` 但 `assets=[]`，并新增 `scope_state` / `documents_state`。
+- **[Breaking] Wiki 晋升 confirm** 在未配置 `default_scope` 时直接抛 `WikiError`（提示配置 `default_scope`），不再回退到公司 scope；preview 不受影响（`module` 为空串）。
+- **[Behavior] 索引器 `parse_yaml_config`** 的 `custom_kafka_consumers` 不再内置私有命名空间，改由 profile 的 `config_extractors` 驱动；默认空 profile 下该字段为空。行结构 `values` / `stream_bindings` / `custom_kafka_consumers` 三键不变，Spring stream bindings 不受影响。该条为行为变更但仍保持兼容。
+- **[Behavior] `parse_feign_clients(..., service_names=...)`**：服务名判定改为以 `workspace.yaml` 登记的服务名为准；未登记的小写驼峰 `@FeignClient(name=...)` 仍按 `url` 回退为 `external:<url>`；不传 `service_names` 的旧调用行为不变（该参数为 keyword-only 可选）。
+- **[Behavior] 索引阶段配置抽取**现在同时遵循 `workspace.yaml` 的 `profile:`（此前只有进程级 `MEMORY_CENTER_PROFILE` 生效），即“workspace 声明 > 环境变量 > 默认”在所有层保持一致。
+- **[Additive] 可选 `profile=` 参数**：上述函数新增可选 `profile=` 关键字参数；返回结构只新增键，未删除或改名既有键。
+
+- **[Breaking] `module_routing.reason`**: `assistant_memory` promote now reports `module_alias` instead of `company_module_alias`; `valid_until` is an empty string when the profile has no expiry; the open-source build ships no company aliases or fallback hints, which come from the profile's `module_aliases` / `module_alias_until` / `module_alias_hint` instead.
+- **[Breaking] Unregistered-module errors on promote** no longer append a built-in company fallback message; only the profile's `module_alias_hint` is appended.
+- **[Breaking] `assistant_admin` validate** no longer requires a default governance file; required governance files come from `wiki.governance_paths`, and an empty profile means no required file.
+- **[Behavior] `assistant_admin` analyze** computes `structure.missing_top_level` / `unexpected_top_level` from `wiki.top_level_dirs`; when unset both are empty (topology check skipped) and the built-in top-level directory list is no longer used.
+- **[Breaking] Knowledge-page projection and wiki-assets-sync**: `workspace_knowledge_summary` and wiki-assets-sync no longer default to a company scope; without a configured scope they return a structured `not_configured` state (`scope=null`, `scope_state` / `binding_reason_code=not_configured`, `related_wiki=[]`) instead of raising. With an empty profile wiki-assets-sync returns `synced=true` with `assets=[]` and adds `scope_state` / `documents_state`.
+- **[Breaking] Wiki promotion confirm** raises `WikiError` when `default_scope` is unset (asking to configure it) instead of falling back to a company scope; preview is unchanged (`module` is an empty string).
+- **[Behavior] Indexer `parse_yaml_config`** no longer contains a private namespace for `custom_kafka_consumers`; extraction is driven by the profile's `config_extractors` and the field is empty with the default empty profile. The row shape (`values` / `stream_bindings` / `custom_kafka_consumers`) is unchanged and Spring stream bindings are unaffected; this is a behavior change that stays compatible.
+- **[Behavior] `parse_feign_clients(..., service_names=...)`**: service-name matching now follows the services registered in `workspace.yaml`; unregistered lower-camel `@FeignClient(name=...)` still falls back to `external:<url>` via `url`; old calls without `service_names` keep their behavior (keyword-only optional parameter).
+- **[Behavior] Config extraction during indexing** now also honors the `profile:` declared in `workspace.yaml` (previously only the process-level `MEMORY_CENTER_PROFILE` was effective), so "workspace declaration > env > default" is consistent across all layers.
+- **[Additive] Optional `profile=` argument**: the functions above accept a new optional `profile=` keyword argument; response shapes only add keys — no existing keys are removed or renamed.
+
+### 升级指引 / Upgrade notes
+
+如果旧版本依赖内置的 MQ 配置命名空间，请把它迁移为 profile：把下面的文件放到 `~/.memory-center/profile.d/<name>.yaml`，或让 `workspace.yaml` 的 `profile:` 指向它，即可恢复 `custom_kafka_consumers` 的既有数据。
+
+```yaml
+name: acme
+config_extractors:
+  - id: acme-mq-consumers
+    root: ["acme", "mq", "consumers"]   # 换成你自己的配置命名空间
+    value_key: topic
+    output: custom_kafka_consumers
+```
+
+If the previous version relied on the built-in MQ config namespace, migrate it into a profile: place the document shown above under `~/.memory-center/profile.d/<name>.yaml`, or point `workspace.yaml`'s `profile:` at it, to restore the existing `custom_kafka_consumers` data.
+
+### 其它 / Other
+
+- 脚本中性化：以私有项目名命名的验证/基准脚本更名为 `scripts/verify_real_workspace.sh` 与 `scripts/bench_p0_real.py`；前者现必填 `MEMORY_CENTER_REAL_WORKSPACE`、`MEMORY_CENTER_REAL_CASES`（缺失时打印用法并 `exit 2`），后者通过 `--workspace` 或同名环境变量指定工作区；旧默认私有路径已删除。
+- 工程默认值中性化：移除内置公司别名、默认 scope 与个人 Wiki 路径；真实工作区路径必须由环境变量 `MEMORY_CENTER_REAL_WORKSPACE` 提供。
+- README 示例路径与真实工程标识改为中性占位。
+
+The verification/benchmark scripts that were named after a private project are now `scripts/verify_real_workspace.sh` and `scripts/bench_p0_real.py`; the former requires `MEMORY_CENTER_REAL_WORKSPACE` and `MEMORY_CENTER_REAL_CASES` (missing values print usage and exit 2), the latter takes the workspace via `--workspace` or the same environment variable, and the old default private paths are removed. Built-in company aliases, default scope and personal Wiki paths are removed; a real workspace path must now be supplied through `MEMORY_CENTER_REAL_WORKSPACE`. README example paths and real project identifiers are replaced with neutral placeholders.
+
+## 5.0.0b25 — 会话接续契约与资料边界 / Session continuation contract and content boundary
+
+- `mc_resume` 与恢复包新增 `continuation`：接续策略（`continue_session` / `rebuild_from_packet`）、原因码、会话句柄状态、资料包是否自足、下一步动作与必读引用。原会话不可续时明确降级为按已落盘资料继续，不再让调用方猜。
+- 恢复包新增 `continuation.pending_decisions`：汇总跨会话存活的待批合并候选与处理入口；审批仍是 append-only 决策行，重复提交幂等。
+- `resume_packet` 与 `mc_lookup` 新增 `content_boundary`：把服务生成的指令区与来自会话、代码、Wiki、记忆的资料区显式分区，正文一律按资料处理，不执行其中的指令，也不据此改变工具或项目范围。
+- JSONL 导出修复撕裂尾：权威记录已提交、导出只写半行时，同步改为从权威记录重建，不再把新记录接在半行后面；新增强杀场景回归用例，覆盖半条记录不被当成事实与重建幂等。
+- 以上均为增量字段：既有工具参数、必填字段与返回结构保持兼容，不需要数据迁移。
+- `mc_resume` and resume packets now return a `continuation` contract (strategy, reason code, session-handle state, whether the materialized packet is self-sufficient, the next action, and must-read refs), so a lost session degrades to "continue from durable material" explicitly instead of leaving callers to guess. Resume packets also summarize cross-session pending decisions. `resume_packet` and `mc_lookup` add `content_boundary` separating service-generated instructions from data produced by sessions, code, Wiki and memory. JSONL export sync now rebuilds from authoritative records when the export ends in a torn half-line instead of appending after it. All fields are additive: existing tool parameters, required fields and response shapes remain compatible, with no data migration.
+
+## 5.0.0b24 — 宿主接入生成器 5.0 化 / Host-binding generator on 5.0
+
+- 宿主接入生成器不再输出 4.x 合同：`AGENTS.md`、`CLAUDE.md`、`GEMINI.md`、`.github/copilot-instructions.md`、`.cursor/rules/memory-center.mdc` 的受管块改为 5.0 协议，按 `mc_workspaces()` 选择已登记工作区，并明确说明 5.0 不读取旧 workspace 文件。
+- `.mcp.json`、`.cursor/mcp.json`、`.codex/mcp.json` 改为 `{"type":"http","url":"http://127.0.0.1:8765/mcp"}`，不再写 `memory-center-mcp --workspace`；DSH profile 的 `cordis.patch.yml` 写入 `transport: streamable-http` 条目并只在地址不一致时重写。
+- `runtime-audit --fix` 不再把宿主绑定回退成 stdio `--workspace`；`inspect-agent-mcp-bindings` 改为按服务端点 URL 判定，新增 4.x stdio 条目与过期 URL 两个回归用例。
+- `docs/MCP_GUIDE.md` 重写为 5.0 合同：一个 `/mcp` 入口、17 个工具参考（参数与真实返回示例）、推荐工作流、证据边界、宿主配置片段（Claude Code / Codex / Cursor / DSH）、4.x→5.0 迁移对照与故障排查；README、ARCHITECTURE、AI_DEV_GUIDE 的入口描述同步到服务化形态。
+- 大范围图清理使用临时范围表与子查询，移除文件路径 `OR` 链和节点 ID 大量绑定参数；保留原有项目／精确文件范围及入边处理语义，清理失败事务回滚。
+- Wiki 自动调度在项目索引失败、取消或中断后停止；状态持久化，重启或删除任务记录不触发自动重试，手动重试恢复。关闭自动同步或暂停来源后不再自动提交该来源关联的项目索引。
+- `docs/MCP_GUIDE.md` is rewritten for the 5.0 contract: one `/mcp` endpoint, a 17-tool reference with real response samples, recommended flows, evidence boundaries, host wiring for Claude Code/Codex/Cursor/DSH, a 4.x→5.0 migration map and troubleshooting; README/ARCHITECTURE/AI_DEV_GUIDE entry points follow the service shape.
+- The host-binding generator is 5.0-native: managed instruction blocks select a registered workspace through `mc_workspaces()`, JSON host configs point at the unified Streamable HTTP endpoint instead of the legacy stdio `--workspace` adapter, and DSH profile patches are written as `transport: streamable-http`. `runtime-audit --fix` no longer downgrades bindings back to 4.x, and binding inspection now compares the service URL (regressions cover both a retired stdio entry and a stale URL). Large graph cleanup and Wiki auto-scheduling changes from the previous unreleased batch ship here as well.
+
+## 5.0.0b23 — 知识阅读与任务交互 / Knowledge and task interaction
+
+- 页面与项目使用地址状态，知识列表与任务列表恢复分页、筛选和详情；支持刷新、前进后退以及任务深链。
+- 编辑草稿与模型整理稿仅在本标签页 sessionStorage 保留最多 24 小时；显式恢复／丢弃，离开和关闭编辑器提醒未保存内容。浏览器配额不足时明确提示。模型预览恢复不绕过来源修订和有效期校验。
+- 索引／知识任务提交后显示后台状态卡，可直接查看进度或审阅结果；Wiki 将索引、治理与评测折叠至工具区，优先展示列表与阅读区。
+- URL-backed navigation and task links restore page context. Tab-scoped drafts require explicit recovery; saved knowledge and model validation contracts remain unchanged.
+
+## 5.0.0b22 — MCP 调用切面与链路监控 / MCP call tracing aspect
+
+- 统一 MCP 调用切面自动记录工具、调用时间、调用方、项目、状态、执行耗时、错误码及链路 ID；授权、工具执行和审计分阶段计量，传输拒绝独立记录。
+- 新增调用监控：时间／主体／客户端／项目／工具／状态筛选、分页、成功率、耗时、工具与错误分布、阶段详情及实时后台任务关联。
+- 不保存参数值、响应正文、令牌、原始异常或堆栈；本地调用身份与客户端自报名称明确区分。记录写入故障不改变业务结果，并显示统计缺口；重启将未完成记录标为中断。
+- Centralized MCP tracing keeps existing tool schemas and results compatible. Caller claims are distinguished from authenticated credentials; structured metadata, phase timing and background task links support diagnosis without storing payload bodies.
+
+## 5.0.0b21 — 自动增量同步与知识刷新闭环 / Automatic source sync and knowledge freshness
+
+- 项目可单独启停源码自动检查，默认关闭；可配置检查间隔和稳定等待，连续修改去抖、复用在途任务。失败、取消、中断及删除任务历史后仍阻止自动重试，手动索引成功恢复。
+- 项目列表及详情显示源码新鲜度、变化文件数、上次成功和检查时间；旧版本或损坏清单提示需更新基线。
+- Wiki、记忆和文档显示待刷新来源及修订变化，分页查看，知识刷新不重新解析源码；待确认记忆单独提示，治理保存后立即更新状态。
+- Default-off per-project source polling with debounce and durable failure blocking. Project freshness and paginated knowledge changes make the save-to-search workflow explicit; knowledge refresh preserves code facts.
+
+## 5.0.0b20 — Wiki／记忆智能治理 / Semantic knowledge governance
+
+- 后台任务补充开始、结束与总处理时间，完善详情、筛选空状态和重复操作保护。
+- 服务事实按内容哈希增量复用，变化服务一次合并并统一重算跨文件关系，支持删除清理与无变化复用；旧基线首次回退完整构建。
+- Task timing and interaction improvements; hash-based incremental service facts with complete relation reconciliation.
+
+- 普通模型辅助识别语义重复与潜在冲突，完整来源核对、逐字引文验证、比较预算和明确覆盖；后台只生成建议，取消／失败不发布半套结果、不自动重试。
+- 新增项目 Wiki／记忆治理界面：状态与类型筛选、分页、完整原文对照、合并稿编辑、审阅确认、保留双方与忽略。事务保存来源链、审计和可选软删除；目录 Wiki 文件只读，记忆默认待确认并保留最早过期时间。过期或来源已变的建议可忽略，不能合并覆盖。
+- PostgreSQL 知识任务入队的 JSON 表达式增加独立列别名，避免字典行合并同名列丢失修订。
+- Chat-model governance adds evidence-backed duplicate/conflict suggestions with explicit comparison coverage. Human review precedes atomic merges and optional soft retirement; source revisions, memory confirmation, expiry and idempotency are enforced. Existing organization and MCP schemas remain compatible.
+
+## 5.0.0b19 — 向量设置幂等保存 / Idempotent embedding settings
+
+- 保存相同的项目向量范围时保持修订不变，避免仅编辑项目名称却使在途向量索引发布失败；过期修订仍报冲突。SQLite／PostgreSQL 专项验证通过。
+- Saving an unchanged embedding mode preserves its revision; stale revisions still conflict. Index publication remains protected against actual settings changes.
+
+## 5.0.0b18 — 项目向量化范围 / Per-project embeddings
+
+- 项目级“跟随全局／全部内容／仅 Wiki 与记忆／关闭”范围，代码图与关键词索引继续独立工作。关闭后索引与混合查询不调用嵌入模型，独立知识刷新也遵守项目设置；其它项目沿用各自配置。
+- 保存不自动重建；关闭立即停止查询侧向量调用，已有向量通过重新索引移除。扩大范围前明确显示需要重建；发布事务检查设置修订，变化后拒绝发布并保留上一代索引。MCP 参数兼容，新增结果字段与 `VECTOR_DISABLED`／`EMBEDDING_SETTINGS_CHANGED` 错误码。
+- Per-project vector scope preserves graph/keyword indexing independently, applies to knowledge refresh, and rejects publication after settings change. Existing projects inherit global behavior; expanded vector coverage requires explicit reindexing.
+
+## 5.0.0b17 — 本地部署，未发行 / Locally deployed beta
+
+- 项目存储治理：历史成功代际保留数量、分页清理预览、显式确认执行、15 分钟有效期、执行前状态与文件指纹复核。当前／在途索引与保留历史代际受保护；缓存按需选择且禁止在途清理，部分失败保留结果并禁止旧预览重放。源码、Wiki、记忆与任务历史不删除。
+- SQLite 精确向量检索改为流式 Top-K，扫描上限保留默认 5,000，并支持环境变量配置／0 关闭；过滤与确定性排序保持兼容，避免全量向量候选驻留内存。
+- 真实模型验收复现空白源码分块导致 HTTP 400：过滤空白分块，单行压缩源码按片段完整分块并保留行／列位置，防止巨型分块被模型截断。模型错误新增 `MODEL_HTTP_ERROR`、`MODEL_TIMEOUT` 分类，不再把 HTTP 拒绝或超时统一报告为连接失败；工具参数保持兼容。
+- Project storage governance adds scoped retention, paginated previews and confirmed cleanup with expiry/stale-plan safeguards. SQLite vector recall streams Top-K with a configurable optional scan budget.
+- 部署与真实验收结果见本轮实施回执（内部资料，不随公开仓库发布）。
+
+## 5.0.0b16 — 开发中，未发版 / Unreleased
+
+- 项目管理新增空间占用面板与只读 `GET /api/v1/workspaces/{workspace_id}/storage`：按项目统计当前／其他索引代际、解析缓存、向量缓存、分块与向量载荷、关键词索引文本及项目记录；切换项目与手动刷新按需读取，异常或符号链接跳过明确显示为部分统计。
+- 文件逻辑大小与数据库载荷分别展示；向量是数据库载荷子项，共享 SQLite 文件与 PostgreSQL 物理页不分摊、不重复计入。源码与外部 Wiki 挂载不计入服务项目数据。同步 Python、前端、锁文件、Compose 与当前文档版本，不发布、不部署。
+- Project management now exposes per-project storage accounting with refresh and scope isolation. Logical file sizes and database payloads are distinct from shared physical storage; vector payload is a subset, and incomplete scans are visible. Source trees and external Wiki mounts are excluded.
+- 验证与环境边界见 b16 项目空间统计回执（内部资料，不随公开仓库发布）：272 项通过、49 项环境跳过，桌面交互及前端／wheel 构建通过；PostgreSQL 未配置隔离库，未部署生产容器。
+
+## 5.0.0b15 — 开发中，未发版 / Unreleased
+
+- 修复并发项目陆续进入时文件 worker 超卖、缓存 UTF-8 损坏导致任务失败，以及取消后消费模型结果的问题；嵌入请求使用有界窗口。POSIX 索引进程使用独立进程组，取消时覆盖派生解析进程。
+- 添加独立知识刷新与全库 Wiki／记忆后台整理；来源修订检查、取消保护、精确重复分组、待审预览与人工确认保存。来源文件更新／删除触发知识刷新，失败后需手动重试。
+- 可选模型重排与人工答案键检索评测；受控会话资料接入默认关闭，只生成待确认候选。
+- TS 项目内路径别名与 re-export 链，Java／Python 可确定继承调用；解析缓存 schema 升级为 2，旧缓存安全失效并重算。
+- 后台任务详情添加安全错误分类、诊断标识、人工处理建议和阶段事件；整理模型展示真实耗时与供应商返回的 Token 数，Skill 成本明确标为估算。
+- 同步 Python／前端／锁文件／Compose 开发版本；本轮不发布、不部署，不变更其他 DSH 插件。
+
+本轮使用方法、参考吸收清单和验收边界见 b15 实施回执（内部资料，不随公开仓库发布）。
+
+English: Reserves the global CPU budget, treats corrupt cache encoding as a miss, bounds embedding requests and guards cancellation after responses. Adds independent knowledge refresh, review-only bulk organization, optional reranking, answer-key retrieval evaluation, opt-in session candidates, TS aliases/re-exports and conservative inherited calls. Diagnostic receipts and model usage are exposed without raw exception secrets; skill token estimates are explicitly estimates. Development changes only; no release or deployment.
+
+## 5.0.0b14 — 2026-10-10
+
+- **新增内容寻址的向量缓存**（`platform/embedding_cache.py`）：键 = 契约版本 ‖ 命名空间 ‖ 模型指纹（`url`/`model`/`protocol`/`dimensions` 的哈希）‖ 文本 sha256。换模型或改维度必然整体未命中，不会把别的模型算出的向量喂回索引；命中与未命中返回**逐值相等**的向量，缓存只影响速度。
+- **缓存按分片打包，而不是一条一个文件**。实测本机新建一个文件是约 4–15 ms 的**固定**开销（1 KiB 与 1.5 MiB 都约 14.5 ms/文件）：一批向量若一条一个文件，单轮写缓存要约 250 s。改为 2 位哈希前缀分片（256 个分片）、`put` 只改内存并标记脏、由新增的 `flush()` 整片原子重写，单轮写缓存降到约 1 s；`flush()` 结束即释放分片内存，不会把整个工作区的向量常驻在进程里。缓存位于工作区目录（`<data_dir>/workspaces/<id>/embedding-cache`），跨代际存活，只在发布成功后按 `MEMORY_CENTER_EMBEDDING_CACHE_MB`（默认 1 GiB，0 关闭）淘汰。
+- **嵌入批处理改为保序并发 + 连接复用**。`Embedder` 拆出单批请求 `_request`，`_connection` 支持调用方注入 `httpx.Client`——索引路径注入一个长生命周期 client，不再像原先那样**每批新建/销毁一个 client**；新增 `embed_many(texts, cache=, concurrency=, should_stop=, on_batch=)`，用 `ThreadPoolExecutor.map` 保序并发，缓存命中短路，取消抛 `EmbeddingCancelled`（索引就地停止、不发布），模型故障照常抛 `CatalogError`（保留上一代索引）。批大小与并发度由 `MEMORY_CENTER_EMBEDDING_BATCH`（默认 16）与 `MEMORY_CENTER_EMBEDDING_CONCURRENCY`（默认 8，上限 32）配置。模型连接验证与查询向量化两条路径**刻意不接缓存**：前者要反映「此刻服务是否可用」，后者要反映「此刻这条查询」。
+- **修掉一个「缓存改变产物」的真实缺陷**。模型会把恰好为整数的分量序列化成 JSON 整数（`0` 而非 `0.0`），`json.loads` 于是给出 `int`，而缓存写入把元素归一化成 `float`——未命中产出 `int`、命中产出 `float`，`0 == 0.0` 为真却 `repr` 不同。修复：`_request` 校验后统一归一化为 `float`。**教训**：等价性门槛必须细到 `repr`，`==` 判不出 `int`/`float`、`-0.0`/`0.0` 这类差异。
+- 实测（真实项目，EmbeddingGemma-2 740m @ 本机 ollama，单进程内依次执行）：**热缓存 426.64 s → 1.65 s（258×）且请求数归零**；写缓存代价 +2%；**并发 8 路只有 1.03×**——本地单实例 ollama 服务端推理串行，HTTP 并发只是排队（同一切片改用可控端点、服务端可并行时为 6.30×）；连接复用在受控端点 L=0 档为 1.48×。四场景（冷跑/并发/写缓存/热跑）产物指纹一致（`2acf817a0d96ba5c`），即缓存与并发只改速度不改产物。方法与数值复核记录见内部基准文档。
+- MCP tool schema、取消与原子发布合同不变；`StructuralParseResult` 与各 API 形状不变。
+
+English: Adds a content-addressed vector cache (`platform/embedding_cache.py`) keyed by (schema, namespace, model fingerprint, text sha256), so switching model or dimensions invalidates everything and hits and misses return value-identical vectors. Entries are **sharded** rather than one-file-per-key: creating a file costs a ~4–15 ms *fixed* penalty on this machine regardless of size (1 KiB and 1.5 MiB both ≈14.5 ms), so writing vectors one file per key took ~250 s to write, while 256 hash-prefix shards with an in-memory `put` plus a batched atomic `flush()` bring that to ~1 s and release shard memory afterwards. The cache lives under the workspace directory (survives generations) and evicts by `MEMORY_CENTER_EMBEDDING_CACHE_MB` (default 1 GiB, 0 disables) after a successful publish. Embedding reuses one `httpx.Client` for a whole index instead of creating one per batch, and `embed_many(..., cache=, concurrency=, should_stop=, on_batch=)` runs batches on a GIL-friendly thread pool while preserving input order; cancellation raises `EmbeddingCancelled` (the index stops without publishing) and model failures still raise `CatalogError` (the previous generation stays readable). Batch size and concurrency come from `MEMORY_CENTER_EMBEDDING_BATCH` (16) and `MEMORY_CENTER_EMBEDDING_CONCURRENCY` (8, cap 32), and the connection-verification and query-vector paths deliberately stay uncached. Also fixes a real "cache changes the artifact" defect: the model serializes integral components as JSON integers, so misses yielded `int` while the cache normalized to `float` — equal under `==` but different under `repr`. Measured on a real slice with the EmbeddingGemma-2 740m model locally: warm cache 426.64 s → **1.65 s (258×) with zero requests**, writing the cache costs +2%, and 8-way concurrency yields only 1.03× because a single local ollama instance serializes inference (6.30× against a parallel-capable endpoint). All four scenarios (cold/concurrent/write-cache/warm) produce the same vector fingerprint, confirming cache and concurrency change speed only. MCP schemas, cancellation and atomic publishing are unchanged.
+
+## 5.0.0b13 — 2026-10-10
+
+- **消除解析侧的重复读取**。此前同一份源码在「切块」「通用结构解析」「Java 专用解析」三处各自读一遍、各自算一次 sha256。现在扫描/切块阶段顺带算出的内容 sha256 会传给两条解析路径（`build_code_graph` 的 `digests` 与 `reindex_workspace` 的 `source_digests`）：解析先按该键查缓存，**命中即完全不碰文件系统**。热跑（缓存命中）下每个文件只读 1 次、只算 1 次哈希，解析阶段零读取；冷跑仍需为解析读取文本，但哈希同样只算 1 次。未提供 digest 的调用方退回旧行为（读文件、算哈希、再查一次缓存），产物逐值不变。
+- **Java 延迟 Feign 解析不再内嵌源码文本**。`pending_feign` 由 `(项目, 相对路径, 源码文本, 符号)` 改为 `(项目, 相对路径, 绝对路径, 符号)`，Feign 目标解析阶段按需读取——只有 Feign 接口自身需要文本，其数量远小于全部 Java 文件。串行／池化／冷／热四条路径的产物形状因此完全一致，且解析产物不再跨阶段驻留整份源码。
+- **解析缓存默认预算按工作区规模自适应**。载荷实测约为可解析源码的 4.8×，固定 512 MiB 会让较大的源码工作区每轮都淘汰刚写下的条目。默认预算改为 `max(512 MiB, 可解析源码字节 × 6)`，上限 4 GiB；显式设置 `MEMORY_CENTER_PARSE_CACHE_MB`（含 `0` 关闭）时仍以它为准，小工作区不受影响。
+- 新增用例覆盖「命中路径不读盘」（删除源文件后仍能命中）、「外部 digest 与内容不符时不复用旧条目」、「digest 传递后产物与自读自算逐值相等」与「预算随源码规模自适应」。MCP tool schema、取消与原子发布合同、`StructuralParseResult` 形状不变。
+
+English: The duplicate source reads around parsing are gone. The content sha256 computed during scanning/chunking is now handed to both parse paths (`digests` on `build_code_graph`, `source_digests` on `reindex_workspace`); a parse probes the cache by that key first, so a warm hit never touches the filesystem. A warm run therefore reads each file once, hashes it once and performs zero reads at parse time; a cold run still reads text to parse but hashes each file only once. Callers that pass no digests keep the old read-hash-probe behaviour, and outputs stay value-identical. Deferred Feign parsing no longer embeds source text in `pending_feign` — it carries the absolute path and reads on demand, so all four paths (serial/pooled, cold/warm) share one output shape and the parse product no longer carries whole sources across stages. The default cache budget now scales with the parseable source size (`max(512 MiB, source × 6)`, capped at 4 GiB) so large workspaces stop evicting what they just wrote; an explicit `MEMORY_CENTER_PARSE_CACHE_MB` (0 disables) still wins. MCP schemas, cancellation and atomic publishing are unchanged.
+
+## 5.0.0b12 — 2026-10-10
+
+- **新增内容寻址的文件级解析缓存**（`platform/parse_cache.py`）：键 = 缓存契约版本 ‖ 命名空间 ‖ 文件身份 ‖ 语言 ‖ 内容 sha256。文件改名而内容不变仍命中，内容一变必然未命中。缓存只存**文件级 IR**；跨文件关系（导入绑定落到哪个文件、调用边、Feign 目标服务）留在归并阶段每次重算，因此改动文件的影响不会被缓存掩盖。
+- **通用结构解析与 Java 专用解析同时接入**：`build_code_graph` 与 `reindex_workspace` / `_parse_java_file` 新增可选 `cache` 参数，不传时行为与既有实现逐值相同。命中与未命中返回**逐值相等**的对象——缓存只影响速度，不影响索引结果。
+- **三条降级保证**：解析器不可用（未装 tree-sitter 或语言无绑定）时**不落缓存**，避免把「缺绑定」固化成持久结果；缓存文件损坏、截断、契约版本不符一律按未命中处理并允许覆写；载荷不可序列化或目录不可写时跳过写入。缓存故障绝不中止索引。
+- **缓存落在工作区级目录**（`<data_dir>/workspaces/<id>/parse-cache`），不在 generation 内——generation 会被 `prune` 清理，缓存必须跨代际存活。只在**发布成功后**维护缓存，失败或取消的索引不改动它。
+- **预算淘汰按「最近使用」而非「最近解析」排序**：命中时刷新时间戳，使一轮索引后仍在用的条目时间最新，而源码已改过或已删除的旧内容条目先被淘汰。`MEMORY_CENTER_PARSE_CACHE_MB` 配置字节预算（默认 512 MiB，0 表示关闭缓存）；命中与未命中的维护结果在任务记录中以 `parse_cache` 字段回报。
+- 实测（真实项目，同进程受控对比）：通用结构解析 1.64 s → 0.86 s（1.9×），Java 专用解析 5.02 s → 0.45 s（11×），**两段合计 6.54 s → 1.31 s（5.0×）**；冷跑写缓存的开销在噪声内。方法与数值复核记录见内部基准文档。
+- MCP tool schema 不变，取消与原子发布合同不变，`StructuralParseResult` 形状不变。**遗留**：同一份源码被读三遍的问题依旧存在——缓存键仍需读文件算哈希，本次只消除了重复**解析**。
+
+English: Adds a content-addressed file-level parse cache keyed by (schema, namespace, file identity, language, content sha256). Only file-level IR is cached; cross-file relations are recomputed at merge time so a changed file's influence is never masked. Both the generic structural parse and the Java-specific parse take an optional `cache` and return value-identical objects whether they hit or miss, so the cache changes speed only. Unavailable parsers are never cached, corrupt entries degrade to a miss, and unwritable or unserializable payloads are skipped — a cache fault never aborts an index. The cache lives at workspace level (outside prunable generations) and is only maintained after a successful publish. Eviction is least-recently-*used* so long-unchanged files survive; `MEMORY_CENTER_PARSE_CACHE_MB` sets the byte budget (default 512 MiB, 0 disables). Measured on a real module in one process: 1.64 s → 0.86 s (structural) and 5.02 s → 0.45 s (Java), 5.0× across both stages, with cold-run cache writing inside noise. MCP schemas, cancellation and atomic publishing are unchanged. Known gap: the three source reads are not collapsed — the cache key still requires hashing each file.
+
+## 5.0.0b11 — 2026-10-10
+
+- **文件级并行改为进程池**。tree-sitter 的 Python 绑定不释放 GIL：实测 4 线程仅 1.41×、8 线程比串行**慢 24%**，同规模 8 进程为 2.56×。`core/indexing/reindex.py` 的 Java 解析新增进程池通道（原线程池保留给未接入服务排程的调用方），并按任务顺序收敛结果，使 `symbol_index` 产物可复现——此前线程分支按完成顺序追加，产物不可复现。
+- **新增全局工作池 `platform/work_pool.py`**：项目并发与文件级并发共用同一份 CPU 预算。`max_file_workers` 默认 0 表示按预算在同时运行的项目之间切分（项目进程本身占一个槽位），显式正数表示每项目固定宽度；并发项目数超过预算时项目内退化为串行，而不是超卖。
+- **通用代码图解析入池**：`build_code_graph` 新增可选 `pool` 参数，传 `None` 时行为与既有串行实现逐值相同。
+- **单文件解析失败不再中止整次索引**：失败文件以 `failed:<异常类型>` 记入覆盖台账，其余文件照常发布，覆盖缺口可查；池级崩溃仍向上抛出，任务有序失败并保留上一代索引。
+- 实测（真实项目）：`build_code_graph` 17.52s → 7.15s（2.45×），池化产物与串行产物深度相等。基线方法、阶段耗时与验收阈值见内部基准文档。
+- 管理 API `PUT /api/v1/job-settings` 新增 `max_file_workers`（0–64）；MCP tool schema 不变，取消与原子发布合同不变。
+
+English: File-level parallelism moves to a process pool because tree-sitter's Python binding does not release the GIL (measured: 4 threads 1.41×, 8 threads 24% slower than serial, 8 processes 2.56×). A new global `platform/work_pool.py` makes project concurrency and file-level concurrency share one CPU budget; `max_file_workers` defaults to 0 (split across concurrently running projects) and degrades to in-project serial rather than oversubscribing. `build_code_graph` takes an optional pool and remains value-identical to the serial path when omitted. A file that fails to parse is recorded in the coverage ledger instead of aborting the index, while a pool-level crash still fails the job and keeps the previous generation readable. Measured on a real module: 17.52 s → 7.15 s (2.45×) with deep-equal output. `PUT /api/v1/job-settings` gains `max_file_workers` (0–64); MCP schemas, cancellation and atomic publishing are unchanged.
+
+## 5.0.0b10 — 2026-10-10
+
+- 后台任务报告真实阶段、完成量、总量、单位和耗时；未知总量不伪造百分比。`progress` 现在代表当前阶段，新增 `progress_scope=phase`；旧任务仍保留旧记录。
+- 项目并发默认按运行环境 CPU 自动选取 1–4，可在管理页配置 1–64；排队上限默认 0（不限），同项目任务去重，取消与原子发布合同不变。文件归属一次分配，减少重复遍历。
+- 普通模型与向量模型分别配置，支持 Ollama 和 OpenAI-compatible；Wiki 和记忆可单篇整理或当前页汇总，预览可编辑，确认才保存。来源修订冲突、模型故障不会覆盖原文。
+- 项目 Wiki 保存新修订并保留历史；目录 Wiki 整理为受管副本，保留原文件；记忆整理后进入待确认状态。保存内容与消费预览使用同一事务。
+- MCP tool schema 不变；管理 API 增加普通模型、任务配置与整理预览端点。
+
+English: Real per-phase counters replace fixed progress percentages. Configurable project processes and optional queue limits retain cancellation and atomic publishing. Separate chat models support reviewable Wiki/memory organization, revision checks, transactional application, and read-only source copies. MCP schemas remain unchanged.
+
+## 5.0.0b9 — 2026-10-10
+
+- 项目列表、服务划分、后台任务、Wiki 目录、候选/已发布 Skill、全局 Skill 发现和 MCP 凭据支持分页。后台任务与发现记录在服务端分页，受限元数据列表在页面内分页。
+- 新增可控全局 Skill 发现：登记多个扫描目录，目录启停、手动扫描、内容预览、单条启停；不修改宿主文件。新发现或内容变更的条目默认停用，来源暂停时 MCP 不提供这些 Skill。
+- `published` / 已发布读取与移除只管理带 `publication.json` 的受管发布内容；已有全局目录内容改由发现流程启停，避免修改原文件。MCP 参数 schema 不变。
+- 每轮交付递增 beta 小版本；本轮 5.0.0b9，仅进行桌面界面验收。
+- Added pagination across admin lists and opt-in global Skill discovery. Source and item controls affect only Memory Center; host files are read-only. New or changed items require explicit enabling. Desktop QA is the target.
+
+- 管理导航分组并区分全局和项目页面；项目切换仅出现在知识库、Wiki、长期记忆。
+- 内容库改为服务端分页、标题/路径与状态筛选、独立 Markdown 阅读区及编辑弹窗；每页可选择 10/20/50 条。
+- 分页读取覆盖项目记录与关联的活动 Wiki 来源，稳定排序，不受旧列表 1000 条展示上限影响；原不带分页参数的管理 API 和 MCP schema 保持不变。
+- Admin navigation separates global and project views. Knowledge libraries provide server-side pagination, filters, a Markdown reader and modal editing; existing unpaged API and MCP contracts remain unchanged.
+
+## 5.0.0b8 — 2026-10-10
+
+- 旧索引清理与发布使用共享代际锁；取消任务删除前先终止并回收进程，删除失败保留任务记录。
+- 项目级影响分析引擎可选择 `auto`（默认）、`generic`、`java`。自动模式按唯一锚点语言选择，混合项目保留 Java/Spring 专用分析；配置保存不使索引失效。
+- 文件数、总大小、单文件大小、内存与超时限制默认全部关闭，只在配置正数后生效。
+- 将保留引擎依赖的 Hook 配置移至内部模块；恢复混合测试的引擎场景，退役 4.x 入口场景明确标记，不再全模块临时忽略；新增真实 5.0 MCP schema 基线。
+- Cleanup and publication share a generation lock; cancelled workers are reaped before removal. Analysis engines are configurable per project, resource limits are opt-in, and retained engine tests are collected independently of retired 4.x entrypoints.
+
+## 5.0.0b7 — 2026-10-10
+
+- 取消源码单文件 1 MiB、总量 64 MiB、10000 文件、30000 分块及代码图符号/调用点规模硬限制。
+- Java 事实索引不再默认截取前 600000 字符，完整解析大文件。
+- 取消索引默认 10 分钟超时；保留手动取消、并发调度和失败保留上一代索引。
+- Source indexing now accepts large files and projects without fixed size/count/time limits. Explicit cancellation and atomic generation publication remain.
+
+## 5.0.0b6 — 2026-10-10
+
+- 迁入独立 Wiki MCP 的知识简报、读取、全文检索、晋升、归档、治理校验与多格式 Skill 来源处理。
+- 新增四个 assistant MCP 工具与知识治理/Skill 管理页面，原 5.0 工具参数保持不变。旧独立服务及 4.x workspace 接入不兼容，需切换统一 MCP。
+- Skill 候选创建、审阅、来源校验、发布、导出和可恢复移除；发布支持指定宿主 Skill 目录。
+- 支持已登记 Wiki 一次性复制迁入受管知识库，原内容保留；统一 Wiki Skill 随发行包安装。
+- Integrated Wiki governance and Skill lifecycle into one service, with managed storage and recoverable removal. Separate Wiki MCP configuration is retired.
+
+## 5.0.0b5 — 2026-10-10
+
+- 多模块项目预览候选上限从 64 调整为 256，扫描深度与目录项预算保持不变。
+- `scan.service_limit` 展示服务数预算；登记错误区分服务数超限、目录项超限和读取失败，继续拒绝不完整预览。
+
+## 5.0.0b4 — 2026-10-10
+
+- 默认包和容器加入 Java、Python、Go、TypeScript、JavaScript 语法库及 Vue 脚本适配。
+- generation 新增通用代码图，支持文件隔离的符号身份、明确导入别名、命名导出与保守调用解析。
+- MCP 符号及调用查询增加覆盖状态、歧义诊断、源码引用新鲜度；参数不变，响应增加通用 symbols/chain 字段。旧索引需重新索引启用。
+- Java Spring 专用影响分析继续保留；动态调用和未支持的模块规则不推断为确定关系。
+
+
+## 5.0.0b3 — 2026-10-10
+
+- 新增 Wiki 来源目录管理与只读 Markdown 多目录接入，支持独立登记、多个项目关联、暂停与移除。
+- 新增手动 / 每分钟自动完整扫描及事务增量快照，保留来源路径、稳定页面身份和内容修订；失败保留上次完整结果。
+- 关联项目复用关键词与向量索引，文件变化标记陈旧引用；目录来源禁止 API/MCP 编辑和删除原页面。
+- 新增只读 `compose.wikis.yaml` 挂载；MCP 工具 schema 保持不变，管理 API 与索引元数据仅增加字段。
+
+
+## 5.0.0b2 — 本机免认证 / 2026-10-10
+
+- 默认本机管理页免登录，刷新后直接加载项目；MCP 全项目、全工具，无凭据范围与速率限制。
+- MCP 接入页提供无令牌 HTTP/stdio 配置；新增项目对已连接客户端动态可见。
+- 增加 `--auth-mode token` / `MEMORY_CENTER_AUTH_MODE=token` 显式认证模式，保留原有凭据、撤销与权限隔离。
+- 本机模式默认拒绝非回环监听；容器显式 `--container-local`，Compose 宿主端口保持回环发布。保留 Host/Origin/JSON 校验。
+- **访问策略变更**：默认认证策略改为个人本机全权限，本机客户端共用管理身份。MCP schema 兼容；状态接口新增 `auth_mode` 标识。数据与已有凭据保留。
+
+
+## 5.0.0b1 — 多项目知识服务开发版 / 2026-10-09
+
+- 新增独立 PostgreSQL + pgvector 控制面/知识存储，保留 SQLite 轻量模式；中文词项 BM25 与向量 RRF 融合。
+- 新增项目与工具授权凭据、撤销、速率预算、MCP 目录过滤和调用复核；主体/项目隔离 session/ref/job。
+- 新增最多两个子进程的持久索引队列、取消/重试/中断恢复、预算与原子 generation 发布。
+- 新增 Vue 项目、任务、文档、Wiki 修订回滚、记忆审核、模型与 MCP 接入管理页面。
+- 新增文本/PDF/DOCX 导入、Ollama/兼容协议嵌入、模型档案隔离、来源删除/修订失效。
+- 新增同目录服务独占锁、停机备份/全新目录恢复、Compose PG 部署和 stdio 代理。
+- **破坏性变更**：`memory-center` 启动 5.0 服务；`memory-center-mcp` 改为 HTTP stdio 代理；移除旧 `memory-center-http` 发行入口。5.0 MCP 新 schema 不兼容旧工具/参数，不读取或迁移 4.x workspace/registry/记忆。
+- 该版本仍为开发测试版。真实模型语义质量、大规模性能与正式灾备矩阵详见平台指南和实施回执，不作已通过声明。
+
+
+## 5.0.0a2 — S1 项目目录（2026-10-09，未正式发布）
+
+- 新增 SQLite catalog，稳定 workspace/service ID、名称与规范化根目录、配置版本和 revision 并发控制。
+- 新增受管理员令牌保护的预览、登记、分页列表、详情、改名、暂停/恢复、暂停后改路径、移除接入 API；原子登记，拒绝软链接重复和父子重叠。
+- 源码只读识别，复用服务类型注册表；预览不写源码、不读取旧 workspace 或 registry，不触发索引。
+- 移除仅取消接入并保留数据；重登记分配新 ID。catalog 与管理员令牌权限 0600，非法结构/文件阻止就绪。
+- 提供 OrbStack 源码只读挂载配置。完整管理页面仍待 S4，项目 MCP 与授权仍待 S2，不提供 4.x 兼容转发。
+- 详见 [项目目录指南](V5_CATALOG_GUIDE.md) 和 S1 实施回执（内部资料，不随公开仓库发布）。
+
+
+## 5.0.0a1 — S0 开发预览（2026-10-09，未正式发布）
+
+- 新增独立 `memory-center-service`：FastAPI/Uvicorn 与官方 MCP SDK 共用生命周期，不读取旧 workspace/registry。
+- 新增 `/health/live`、`/health/ready`、状态 API、`/admin/` Vue 空态和 `/mcp` 的只读 `mc_service_status`；支持传输取消和正常关闭。
+- wheel 分发页面产物；新增非 root Docker 镜像与 Compose/OrbStack 部署，运行时无需 Node.js。
+- 5.0 为全新安装、不兼容旧接口或旧数据。项目目录、授权、Worker 和完整管理页面仍待 S1–S4；旧入口按切片移除，不进行兼容转发。
+- 实际操作与验收边界见 [服务指南](V5_SERVICE_GUIDE.md) 和 S0 实施回执（内部资料，不随公开仓库发布）。
+
+
+## Unreleased / 未发布
+
+- **5.0 方案决策（尚未实现）**：独立服务与管理页面按全新安装设计，源码项目重新登记、索引与记忆重新建立；不提供 4.x workspace/registry/历史数据导入、旧 CLI/MCP/HTTP/DSH 兼容层或跨版本降级。架构采用 FastAPI/Uvicorn、官方 Python MCP SDK、Vue 3、SQLite 与有界进程 Worker。当前仅修订设计文档，软件版本仍为 4.6.30，未删除历史数据。实施流程见内部 5.0 改造流程方案（内部资料，不随公开仓库发布）。
+
+- **4.6.30 Shadow/Task Memory Reliability / 影子与任务记忆可靠性**：本地包、CLI 与 MCP 运行时版本提升至 `4.6.30`。本版集中加固记忆写入与宿主集成的可靠性：Shadow 快照、Observation 折叠与 authority 切换的读-改-写统一在专用 `shadow.lock` 内完成，避免并发写入互相覆盖导致 L2 案例缺源；Hook 的 session-id 交接文件改为按 workspace 隔离并支持 `MEMORY_CENTER_SESSION_ID_FILE` 注入，消除同机多项目互相关闭 session；`memory_discover` 压缩矩阵改读真实 memory layer key；delivery waiver 过期状态在审批与列表中一致持久化。逐条细节见下方各条。
+- **4.6.30 Shadow/Task Memory Reliability (EN)**: Local package, CLI, and MCP runtime metadata bumped to `4.6.30`. This release hardens memory-write and host-integration reliability: Shadow snapshot recording, observation folding, and authority switching now perform their read-modify-write under a dedicated `shadow.lock` so concurrent writers can no longer overwrite each other and leave L2 cases short a source; the hook session-id handoff file is workspace-scoped and injectable via `MEMORY_CENTER_SESSION_ID_FILE`, removing cross-project session clobbering on one machine; `memory_discover` reads the real memory-layer keys from its compression matrix; and delivery-waiver expiry is persisted consistently between approval and listing. See the individual entries below for details.
+
+- **Shadow 并发写入与 Hook 会话隔离修复 / Shadow write-concurrency and hook session isolation fixes**：`record_shadow_snapshot`、Observation 折叠（`_fold_observation_into_shadow`）与 `set_shadow_authority` 的读-改-写此前完全无锁，两个 source 的快照或观测并发到达同一 Shadow 时，后写者会用自己的旧快照整表覆盖 `contributions`，先写者的候选文件、意图与水位被静默丢弃（L2 案例因此缺一个 source）；现三处统一在 `WorkspaceStore` 新增的专用 `shadow.lock` 内完成整个读-改-写，锁外只保留只读结果组装与 append-only 的 receipt/映射登记。新增两个并发回归测试用固定竞态窗口证明必要性：禁用该锁时两个测试各丢一条 contribution、`revision` 停在 1。Hook 的 session-id 交接文件此前是写死的全局 `~/.cache/memory-center/session-id`：同一台机器并行处理两个项目时，后启动的 session 会覆盖前一个，任一项目的 Stop hook 都可能关掉另一个项目刚启动的 session，且在无 `$HOME` 写权限的环境（含受限测试沙箱）直接失败；现改由 `hooks/spec.py:session_id_file()` 在调用时解析——`MEMORY_CENTER_SESSION_ID_FILE` 显式覆盖 > 按 workspace 隔离的 `~/.cache/memory-center/sessions/<digest>/session-id` > 无 workspace 时保留旧全局路径（向后兼容），`run_hook` 在参数解析前先归一化 workspace 以保证 start/stop 两侧命中同一文件。配套在 `tests/conftest.py` 增加 autouse 的 `isolated_session_id_file`，原先因写真实 home 而失败的 3 个 hook runner 测试转为通过，CLI 与 MCP tool schema 均无变更。另修复三处记忆与门禁读写缺陷：`memory_discover` 读压缩矩阵时用了实际不存在的 `"L0"`/`"count"` 等 key（导致三个候选恢复动作恒被判为存在），现改读 `_build_memory_layers` 的真实 key（`L0_session_events`/`L1_case_atoms`/`L2_task_spaces` 及 `event_count`/`case_count`/`active_task_space_count`）；审批一个 `expires_at` 已过的 delivery waiver 时此前直接返回而未落盘 `expired` 状态，`list_delivery_waivers` 也不把已过期的 `pending` 视为过期，现审批即持久化 `expired` 并追加 `waiver_expired` 历史，列表按同一判定自动过期。顺带修复 2 个既有 lint：`cli/commands/eval.py` 缺 `Any` 导入（F821）、`cli/commands/ops.py:78` 的 `typer.Option` 默认值（B008）。
+- **Shadow write-concurrency and hook session isolation fixes (EN)**: The read-modify-write in `record_shadow_snapshot`, observation folding (`_fold_observation_into_shadow`), and `set_shadow_authority` held no lock at all, so when snapshots or observations from two sources reached the same Shadow concurrently the later writer overwrote the whole `contributions` record with its own stale snapshot and the earlier writer's candidate files, intent, and watermark were silently dropped (leaving L2 cases short a source). All three sites now hold a dedicated `shadow.lock` added to `WorkspaceStore` across the entire read-modify-write, with only read-only result assembly and the append-only receipt/mapping registration left outside. Two concurrency regression tests pin the race with a fixed interleaving window: with the lock disabled each test loses one contribution and `revision` stalls at 1. The hook session-id handoff file used to be a hard-coded global `~/.cache/memory-center/session-id`: with two projects open on one machine the later `SessionStart` overwrote the earlier one, so either project's Stop hook could close the other project's session — and it failed outright wherever `$HOME` is not writable, including restricted test sandboxes. It is now resolved at call time by `hooks/spec.py:session_id_file()` — `MEMORY_CENTER_SESSION_ID_FILE` override > per-workspace `~/.cache/memory-center/sessions/<digest>/session-id` > the legacy global path when no workspace is given (backward compatible) — and `run_hook` normalises the workspace before resolving parameters so start and stop hit the same file. A new autouse `isolated_session_id_file` fixture in `tests/conftest.py` turns the three previously failing hook-runner tests green, and no CLI or MCP tool schema changes. Three further memory/gate defects are fixed: `memory_discover` read non-existent keys (`"L0"`, `"count"`, …) from the compression matrix, which made three candidate recovery actions look permanently present, and now reads the real keys from `_build_memory_layers` (`L0_session_events`/`L1_case_atoms`/`L2_task_spaces` with `event_count`/`case_count`/`active_task_space_count`); approving a delivery waiver whose `expires_at` had already passed returned without persisting the `expired` status and `list_delivery_waivers` did not treat an expired `pending` waiver as expired, and both now agree and append a `waiver_expired` history entry. Finally, two pre-existing lint errors are fixed: the missing `Any` import in `cli/commands/eval.py` (F821) and the `typer.Option` default at `cli/commands/ops.py:78` (B008).
+
+- **HTTP 路由接缝与共享工具分层 / HTTP route seam and shared-helper layering**：达成 ADR-0002 §4.1——`http/routes/*` 不再直接导入非 foundation 的 core 包，`memory_impact`、`workspace_case_decisions`、`workspace_quality_overview`、`workspace_knowledge_summary`、`workspace_job_status`、shadow/shadow-handoff 系列等 24 个名字改由 `application/http_facades.py` 统一再导出（该模块本就是为 HTTP 适配层准备的接缝），路由行为与响应结构不变。同时推进 ADR-0002 §4.4：把放错层的共享工具下沉——`load_context` 的调用点改为直接使用 `WorkspaceStore`/`load_workspace_config`，`_merge_artifact_section` 迁到 `core/foundation/text.py`（`merge_markdown_section`，旧路径保留兼容再导出），领域词分词迁到 `core/retrieval/scoring.py`（`tokenize_with_domain_terms`），claim-boundary reason code 映射迁到新增的 `core/foundation/claim_boundary.py`。`core` 非 orchestrator 包反向依赖 `core.orchestrator` 的违规文件由 7 个清零：有界查询模板从 `core/retrieval/templates.py` 移到 `core/orchestrator/templates.py`（模块内部改用相对导入，`find_symbols` / `trace_call_paths` / `find_contract_consumers` 等函数签名不变，调用方仍可经既有 facade 路由）；`evaluate_lookup_contract` 与 `evaluate_session_recall` 的查询/恢复实现改为由调用方注入（`runner`、`resume_runner`），CLI `eval-lookup-contract`、`eval-session-recall` 与 release gate 负责传入 `memory_query_hybrid` / `workspace_resume_context`；`wiki_promotion_preview` 改为直接读 `session-events.jsonl`（与 `workspace_session_summary` 同源、同 50 条窗口），行为等价。CLI 与 MCP tool schema 无破坏性变更。
+- **HTTP route seam and shared-helper layering (EN)**: ADR-0002 §4.1 is now satisfied — `http/routes/*` no longer import non-foundation core packages; 24 names (`memory_impact`, `workspace_case_decisions`, `workspace_quality_overview`, `workspace_knowledge_summary`, `workspace_job_status`, the shadow/shadow-handoff family, and others) are re-exported through `application/http_facades.py`, the seam that already existed for the HTTP adapter. Route behaviour and response shapes are unchanged. ADR-0002 §4.4 also advanced by sinking misplaced shared helpers: `load_context` call sites now use `WorkspaceStore`/`load_workspace_config` directly, `_merge_artifact_section` moved to `core/foundation/text.py` as `merge_markdown_section` (old path kept as a compatibility re-export), domain-vocabulary tokenization moved to `core/retrieval/scoring.py` as `tokenize_with_domain_terms`, and the claim-boundary reason-code mapper moved to the new `core/foundation/claim_boundary.py`. Non-orchestrator core files that reverse-depend on `core.orchestrator` went from 7 to zero: the bounded query templates moved from `core/retrieval/templates.py` to `core/orchestrator/templates.py` (relative imports inside the module; the `find_symbols` / `trace_call_paths` / `find_contract_consumers` signatures are unchanged and callers still reach them through the existing facades), `evaluate_lookup_contract` and `evaluate_session_recall` now receive their query/resume implementation from the caller (`runner`, `resume_runner`) with the CLI `eval-lookup-contract` / `eval-session-recall` commands and the release gate supplying `memory_query_hybrid` / `workspace_resume_context`, and `wiki_promotion_preview` reads `session-events.jsonl` directly (same source and same 50-row window as `workspace_session_summary`), behaviour-preserving. No breaking CLI or MCP tool schema changes.
+
+- **工件写入并发与证据/豁免安全修复 / Artifact write-concurrency and evidence/waiver safety fixes**：修复并发写入造成的静默数据丢失——`update_task_artifact` 与 `update_artifact` 的读-改-写此前只锁写回，现整体持锁；`append_change_log`、`compact_change_log` 与通用工件更新此前分别使用 `store.lock` 与 `artifacts.lock` 两把不同的锁，现统一到 `artifact_lock_file` 并在锁内完成整个读-改-写。`task_evidence_gc` 现在同时扫描 `.jsonl`/`.json`，不再删除仅被 `decisions.jsonl` 引用的证据分块。delivery waiver 的 `expires_at` 缺失时区时按 UTC 解释，无法解析时按已过期处理（fail-closed），并在创建时校验 ISO-8601 格式，避免过期豁免永久绕过门禁。返回结构与 MCP/CLI/HTTP 接口保持不变。
+- **Artifact write-concurrency and evidence/waiver safety fixes (EN)**: Fixed silent data loss from concurrent writes — `update_task_artifact` and `update_artifact` previously locked only the write-back and now hold the lock across the entire read-modify-write, while `append_change_log`, `compact_change_log`, and generic artifact updates previously used two different lock files (`store.lock` vs `artifacts.lock`) and now share `artifact_lock_file` with the whole read-modify-write inside it. `task_evidence_gc` now also scans `.jsonl`/`.json`, so it no longer deletes evidence chunks referenced only by `decisions.jsonl`. Delivery waivers now interpret a timezone-less `expires_at` as UTC, treat unparseable values as expired (fail-closed), and validate ISO-8601 at creation time, so an expired waiver can no longer bypass a gate permanently. Return shapes and the MCP/CLI/HTTP interfaces are unchanged.
+
+- **归档覆盖与 CLI 输出可解析性修复 / Archive overwrite and CLI output parseability fixes**：`archive_task_space` 此前在同名归档已存在时直接 `shutil.rmtree` 删除旧归档——`task_id` 是标题 slug，同名任务重建后再归档必然命中该分支，等于静默销毁历史任务空间；现在旧归档整体移到 `archive/superseded/tasks/<slug>-<stamp>[-N]` 并在返回值新增的 `preserved_archives` 中报告，canonical 归档路径仍为 `task_id`，归档任务依旧可按 id 解析。CLI 全部命令改经 `memory_center.cli.output.print_data`（`soft_wrap=True`）输出：rich 的默认 `print` 会按终端宽度折行，把 `next_action` 命令模板、URL 等长字符串从中断开，导致 stdout 既不是合法 JSON 也不是合法 Python 字面量；`backend-consistency` 等命令的机器可读输出恢复可解析。
+- **Archive overwrite and CLI output parseability fixes (EN)**: `archive_task_space` used to `shutil.rmtree` an existing same-slug archive. Since `task_id` is the title slug, re-creating and re-archiving a same-titled task always hit that branch and silently destroyed the previous task space. The old archive is now moved wholesale to `archive/superseded/tasks/<slug>-<stamp>[-N]` and reported through the new `preserved_archives` field, while the canonical archive path stays `task_id` so archived tasks remain resolvable by id. Every CLI command now emits through `memory_center.cli.output.print_data` (`soft_wrap=True`): rich's default `print` word-wraps to the terminal width and splits long strings such as the `next_action` command template or URLs across lines, leaving stdout neither valid JSON nor a valid Python literal. Machine-readable output from `backend-consistency` and friends is parseable again.
+
+- **`memory_discover` 压缩矩阵回归修复 / `memory_discover` compression-matrix regression fix**：lookup 模块重构（47b5815）在把 `memory_discover` 迁入 `lookup_diagnostics.discover` 时，整块丢掉了压缩矩阵中的 `sync_progress`、`health_check`、`audit_check` 三个 key，`test_memory_discover_sync_progress_is_executable_shape` 自此长期为红。现恢复为重构前的 8 个 key，并新增测试钉住 `resume_work`/`handoff_model`/`health_check`/`audit_check`，避免再次被静默删除。
+- **`memory_discover` compression-matrix regression fix (EN)**: The lookup refactor (47b5815) dropped the `sync_progress`, `health_check`, and `audit_check` keys entirely when moving `memory_discover` into `lookup_diagnostics.discover`, which left `test_memory_discover_sync_progress_is_executable_shape` red ever since. The matrix is restored to its original eight keys, and a new test pins `resume_work`/`handoff_model`/`health_check`/`audit_check` so they cannot be silently dropped again.
+
+- **外部发布 Skill 反向登记 / External published-Skill reverse registration**：新增 `mc_admin(action="external_skill_register")`，将外部 `publication.json` 的名称、版本、内容哈希、验证引用、快照引用和来源标签登记为既有协作资产，不复制正文、不读取候选目录，也不接管外部发布生命周期。只有含真实 `validation_refs` 的已发布 Skill 才可进入 `asset_loadout` 和 `mc_context_pack`；仅有研究运行护照等 `snapshot_refs` 的记录保留审计但明确 `blocked`。
+- **External published-Skill reverse registration (EN)**: Added `mc_admin(action="external_skill_register")` to project an external `publication.json` into the existing collaboration-asset registry using only its name, version, content hash, validation/snapshot references, and source tag. It neither copies content nor reads candidate directories or owns the external release lifecycle. Only published Skills with real `validation_refs` enter `asset_loadout` and `mc_context_pack`; snapshot-only records remain auditable but are explicitly blocked.
+
+- **DSH 宿主绑定检测与修复 / DSH host binding detection and repair**：`runtime-audit` 现在把每个 DSH profile 的 `cordis.patch.yml`（`$DSH_HOME/profiles/*`，可用 `DSH_HOME` 覆盖）当作一等 MCP 绑定目标——校验 `mcp-memory-center` 条目是否存在、`command` 是否真实可执行、`--workspace` 是否指向当前 workspace、整份 patch 层是否仍是合法 YAML（否则在 `parse_error` 说明原因），任一不满足即计入 `missing_or_stale`；`--fix` 以文本级拼接就地替换或追加该条目，不重排 YAML，保留 `!!js` 表达式与注释。`memory-center-mcp` 解析新增文档化安装目录回退（PATH → `~/.local/bin` → `/opt/homebrew/bin` → `/usr/local/bin`，可用 `MEMORY_CENTER_BIN` 覆盖），修复 GUI 宿主最小 PATH 下生成裸命令名或 `/opt/homebrew/...` 这类失效路径的问题。
+- **DSH host binding detection and repair (EN)**: `runtime-audit` now treats each DSH profile's `cordis.patch.yml` (`$DSH_HOME/profiles/*`, overridable with `DSH_HOME`) as a first-class MCP binding target: it validates that the `mcp-memory-center` entry exists, that its `command` is actually executable, that `--workspace` targets the current workspace, and that the patch layer is still loadable YAML (otherwise `parse_error` reports why), counting any failure in `missing_or_stale`. `--fix` replaces or appends only that entry through text splicing, never re-serialising the YAML and preserving `!!js` expressions and comments. MCP executable resolution gained a documented install-location fallback (PATH → `~/.local/bin` → `/opt/homebrew/bin` → `/usr/local/bin`, overridable with `MEMORY_CENTER_BIN`), fixing bare command names and dead `/opt/homebrew/...` paths generated under a GUI host's minimal PATH.
+
+- **测试隔离修复 / Test isolation fix**：`runtime-audit --fix` 相关测试此前未隔离 `DSH_HOME`，在新增 DSH 绑定修复能力后会把开发者真实 `~/.dsh` profile 的 MCP 绑定改写成 pytest 临时工作区路径。`tests/conftest.py` 新增 autouse 的 `isolated_dsh_home` fixture，确保整份测试套件不再写入真实宿主配置。
+- **Test isolation fix (EN)**: `runtime-audit --fix` tests did not isolate `DSH_HOME`, so once DSH binding repair existed they rewrote the developer's real `~/.dsh` profile bindings to a pytest temp workspace path. `tests/conftest.py` now ships an autouse `isolated_dsh_home` fixture so the suite can never write the real host configuration.
+
+- **4.6.29 Technical-design foundation / 技术方案基础信息**：本地包、CLI 与 MCP 运行时版本提升至 `4.6.29`；派生 `TECH_SPEC.md` 新增需求来源与非目标展示，并继续呈现已有的子任务读/写范围和停止条件。新增技术方案设计 Agent 提案，完整编排与门禁仍为后续工作。
+- **4.6.29 Technical-design foundation (EN)**: Bumped the local package, CLI, and MCP runtime metadata to `4.6.29`. Derived `TECH_SPEC.md` now renders requirement sources and out-of-scope items alongside existing subtask read/write scopes and stop conditions. The Technical Design Agent proposal is added; its full orchestration and gates remain future work.
+
+- **Built-in Workbench removal / 内置工作台下线**：移除服务端 `/ui/*` HTML 页面和 `/app` Vue SPA 静态托管；它们现在按设计返回 `404`，且不提供兼容跳转。交互式展示迁移到 Memory Center DSH Plugin；自定义展示可使用受限的 `/workspace/*` JSON 读模型。README、架构、用户与 MCP 文档新增迁移说明和旧页面映射。
+- **Built-in Workbench removal (EN)**: Removed the server-rendered `/ui/*` pages and `/app` Vue SPA hosting. Both intentionally return `404` with no compatibility redirect. Interactive presentation moves to the Memory Center DSH Plugin, while custom displays can use the bounded `/workspace/*` JSON read models. The README, architecture, user, and MCP guides now include a migration path and old-page mapping.
+
+## 4.6.28 Session-First Focus Task / Session-first 焦点任务改造
+
+- 本地包、CLI 与 MCP 运行时版本提升至 `4.6.28`；会话焦点计算不再回退 `active_tasks[0]`，焦点任务锚定收敛到显式 task/session 绑定。
+- Local package, CLI, and MCP runtime version bumped to `4.6.28`; session focus no longer falls back to `active_tasks[0]`, and focus-task anchoring converges on explicit task/session binding.
+
+- **Session-first 焦点任务改造**：新增 `resolve_session_focus` 会话感知焦点计算，`workspace_workbench_summary` 等接口支持 `session_id` 参数；焦点输出改为 `focus` 结构体，区分 `task`、`shadow`、`none` 三种状态，禁止回退到 `active_tasks[0]`；`sync_task_space=false` 时禁止自动绑定；delivery 摘要捕获必须锚定显式任务 ID，并输出 `binding_reason_code` 审计块。
+- **delivery capture Shadow 锚点**：DSH 插件不持有任务状态机、无法传 `--task-id`；服务端在缺省锚点时按 `dsh`/`memory-center` 两种 source kind 解析该会话 Shadow 的显式绑定，仍未绑定则拒绝写入（`task_id_required`）。
+- **侧链路焦点锚点收敛**：`workspace_knowledge_summary` 无 `task_id` 时返回 `anchor_state=unbound` 空状态；`workspace_resume_packet` 只认显式 `task_id` 或 session 可信绑定（explicit/auto_direct_anchor）；`memory_eval_agent_guidance` 缺 intent 时不再拿历史任务标题冒充查询。
+- **wiki 晋升锚点与参数安全**：`confirm_wiki_promotion` 组装参数重构为 `_build_promote_command`，所有会话内容经 `_clean_bridge_arg` 清洗（剥离控制字符、去选项样前缀、限长），subprocess 显式 `shell=False`；delivery 锚点以 `--task-id` 传给 bridge 作审计标注。
+
+## 4.6.27 KnowledgeLink Safety Fixes / 长期知识关联安全修复
+
+- 本地包、CLI 与 MCP 运行时版本提升至 `4.6.27`；修复未绑定 close 写 L2、长会话绑定决策读取、BM25 候选顺序、任务附着校验与 DSH 知识页接线。
+- Local package, CLI, and MCP runtime version bumped to `4.6.27`; fixes cover unbound-close L2 writes, long-session binding reads, BM25 candidate ordering, task attachment validation, and DSH knowledge-page wiring.
+
+- 修复未绑定会话 close 自动创建 L2；绑定决策按 session 起始事件独立查询，避免超过 50 条事件后丢失授权。
+- Wiki 候选按 FTS5 BM25 负分排序；文件缺失或登记哈希与当前文件不一致时排除候选。附着要求真实任务与资产 owner；DSH 知识页接入候选接口和等待结果的显式附着操作。
+
+## 4.6.26 Trusted KnowledgeLink / 可信长期知识关联
+
+- 本地包、CLI 与 MCP 运行时版本提升至 `4.6.26`；KnowledgeLink 补齐人工 actor、session 派生绑定授权、只读默认漂移检查与脱敏观测事件。
+- Local package, CLI, and MCP runtime version bumped to `4.6.26`; KnowledgeLink now requires a manual actor, derives task authorization from the session, defaults drift checks to read-only, and redacts observability events.
+
+- **KnowledgeLink integration plan**：新增 `KNOWLEDGE_LINK_INTEGRATION_PLAN.md`，定义 DSH 插件、Memory Center 与 Personal Wiki 的权威边界、只引用的 KnowledgeLink 模型、锚定检索、人工确认晋升、hash 漂移和四阶段验收；禁止复制 Wiki 正文或由完成信号自动写入长期知识。
+- **KnowledgeLink 四阶段实现 / KnowledgeLink four-phase implementation**：按计划实现 Phase 1–4。Phase 1：`core/knowledge/wiki_bridge.py` 重构为 KnowledgeLink 契约——`link_status=active|stale|revoked` + 可回溯状态历史、`content_sha256` 统一为 raw 字节全量 SHA-256（`ingest_wiki_document_asset` 的 20 位截断文本哈希同步迁移）、注册强制非空 `evidence_refs`、`shadow_only` 会话禁止 task-scoped 链接、相同 `(knowledge_id, content_sha256)` 幂等；`wiki_promotion_preview` 产出带证据引用的 delivery candidate。Phase 2：新增 `core/knowledge/candidates.py` 锚定候选 facade——bridge `brief` 子进程传输（可注入、不可用即诚实返回空）、硬上限 3 条、`min_score` 阈值、stale/revoked 一律排除、曝光事件留痕。Phase 3：确认晋升登记 KnowledgeLink 并记录 `promotion_confirmed`；DSH 插件新增 `wikilink.js` 三段式动作模块（attach/preview/confirm，不直接写 Wiki、confirm 前无持久化副作用）。Phase 4：新增 `core/knowledge/wiki_drift.py`——hash/scope/evidence 漂移检测（除 stale 标记外只读，revoked 仅人工）、`knowledge-link-events.jsonl` 可观测事件与聚合指标。新增 CLI 命令：`knowledge-links`、`knowledge-candidates`、`knowledge-link-attach`、`knowledge-link-mark`、`knowledge-link-drift`、`knowledge-link-metrics`。
+- **KnowledgeLink four-phase implementation (EN)**: Phase 1 rebuilds `wiki_bridge.py` as the KnowledgeLink contract (three-state `link_status` with traceable history, full raw-bytes SHA-256 as the only `content_sha256` caliber, evidence-gated registration, shadow_only task-scope gate, idempotent re-registration). Phase 2 adds the anchored candidates facade over the injectable `personal-assistant-wiki-bridge brief` transport with a hard cap of 3, score thresholds, and stale/revoked exclusion. Phase 3 wires confirmed promotions into KnowledgeLink registration plus the DSH plugin `wikilink.js` three-step workbench actions. Phase 4 adds drift detection, bounded observability events, and aggregate metrics. New CLI commands: `knowledge-links`, `knowledge-candidates`, `knowledge-link-attach`, `knowledge-link-mark`, `knowledge-link-drift`, `knowledge-link-metrics`.
+
+## 4.6.25 Trusted Task Binding / 可信任务绑定
+
+- 本地包、CLI 与 MCP 运行时版本提升至 `4.6.25`；TaskBindingDecision 统一收紧 `mc_start`、`mc_sync`、`mc_close` 的 L2 写入授权。
+- Local package, CLI, and MCP runtime version bumped to `4.6.25`; TaskBindingDecision consistently gates L2 writes across `mc_start`, `mc_sync`, and `mc_close`.
+
+### 写入治理吸收 G1–G3：追加式案例治理与写入决策事件 / Write Governance Absorption G1–G3
+
+按内部写入治理吸收方案吸收 Utopia pending_facts 对比结论中的三项 P0：一切治理态度走 append-only 事件 + 投影，永不改写已写入数据；全部 additive、向后兼容。
+
+- **G1 案例替代闭环**：新增 `core/orchestrator/case_decisions.py`——`supersede_case` / `reinstate_case` / `workspace_case_decisions` 与 `project_case_truth` 投影。决策行落 `memory/case-decisions.jsonl`（record_type=case_decision），case 原始行永不改写；current truth = 存储字段基线 + 决策折叠（latest wins）。`consolidate-session` 的 `_existing_cases` 接入投影（分类与 decide 复检共用同一接线点），workspace overview 的 `current_truth_cases` / `superseded_cases` 同样按投影计数。入口三层同义：CLI `case-supersede` / `case-reinstate` / `case-decisions`、MCP `mc_admin` action `case_supersede` / `case_reinstate` / `case_decision_list`、HTTP `/workspace/case-supersede` / `case-reinstate` / `case-decisions`。替代前校验 case 存在、successor 存在且未被替代；重复/未知操作返回结构化 no-op 不写入。
+- **G2 L0.5 note 替代改追加式**：`session_notes.py` 删除 `_update_note_row` 原地改写；`note_supersede` / `note_forget` 改为向 `memory/session-note-decisions.jsonl` 追加决策行，生效状态由 `project_note_statuses` 投影（latest wins）。fingerprint 幂等门、`note_list` 行注记、`note_search`、workspace overview `active_note_count` 全部消费投影；被投影遗忘的 note 允许同 fingerprint 重新记录。stored `status` 保留为向后兼容基线。
+- **G3 写入决策事件化**：`receipts.py` 新增 `build_write_decision`（schema `write_decision`，必填 `actor`，携带 `reason`/可选 `score`/`rules`/`refs`——谁拍板、为什么、凭什么）；`build_write_receipt` 接受 additive `decision` 块。三条 L1 产写入路径（`workspace_record_case` 新增 `actor`/`decision_reason` 参数、整合候选 decide-apply、`work-close` 自动案例）的 receipt 均嵌入决策块；`workspace_replay_write_chain` 回放按行透出 `decision`，形成端到端"谁在什么依据下写了这条记忆"审计链。人的态度进决策事件，不编码进被写数据字段。
+- **回归**：`tests/domain/test_case_supersede.py`（15 个：决策行追加、stored 行不变、投影、legacy 兼容、整合 ADD 判定、overview 计数、CLI/HTTP/MCP 三入口、HTTP mutating 契约、successor 校验、导出缺失不翻转）、`tests/domain/test_session_notes.py` 新增决策行断言（supersede/forget 后原行 status 仍 active、决策文件有行、遗忘后可重录、`active_note_count` 投影、决策行 actor）、`tests/domain/test_write_decision_events.py`（8 个：决策块 schema、三条路径 receipt 带 decision、回放透出、mc_close/CLI actor 贯通）。
+- **文档同步**：REFERENCE（`case-*` CLI、mc_admin 案例治理 action、Session Notes 决策行语义、§6.6 write receipt `decision` 块）、MCP_GUIDE（case_*/note_* action 语义）、USER_GUIDE（Session Notes 追加式语义 + 维护章新增"Case 治理：替代与恢复"）、CHANGELOG 本条。
+- **评审加固（review hardening）**：
+  - **P0 HTTP 方法契约**：`/workspace/case-supersede` / `/workspace/case-reinstate` 登记进 `_MUTATING_HTTP_PATHS`——此前未登记导致 GET 会执行写入、按规范使用 POST 的客户端反被 405 拒绝；`/workspace/case-decisions` 保持 GET 只读。
+  - **successor 校验补全**：`supersede_case` 现在校验 successor 仍为 current truth（`successor_not_current_truth`）并拒绝自替代（`successor_is_self`），与文档承诺一致。
+  - **读取口径统一**：case 决策台账与案例读取改经 `read_jsonl_prefer_backend`（SQLite 权威），JSONL 导出丢失不再使判定翻转；新增"导出文件缺失时判定不变"回归测试。
+  - **决策行 actor 贯通**：note 决策行（supersede/forget）携带 `actor`（mc_admin `source` 透传）；`mc_close` 自动案例 receipt 固定 `actor=mc_close_agent`，HTTP `work-close` 缺省 `work_close_agent`，CLI `record-case` 新增 `--actor` 选项——所有 L1 receipt 的 decision 块不再出现空洞空 actor。
+  - **计数口径**：workspace overview `superseded_count` 先排除已投影为 current truth 的行，legacy 存储字段与 reinstate 决策并存时不再双计。
+
+### Task Space 误绑定修复：切断自写自匹配轮替 / Task Space Mis-binding Fix
+
+真实工作区验证发现：`mc_close` 自动同步在无显式 task_id 时经 `resolve_task_space` 低置信解析，把无关 intent 写进既有 task space；被写入的 current_summary 又成为下次匹配的匹配源，形成自强化轮替（单一任务空间历史中出现 69 种不同任务头）。四项修复：
+
+- **启动入口最终门禁**：补齐 `mc_start` 的遗漏路径。此前它会把嗅探得到的 task ID 直接传给 `workspace_sync_sniff_to_artifacts`，后者按公开契约将非空 ID 视为用户显式选择，因而绕过解析置信度门禁。现在仅当 auto-sync 已推荐且任务标题或标签存在直接精确锚点时，才允许写入/绑定；否则保持 Shadow-only。响应新增 additive `task_binding` 审计块；回归覆盖模糊解析不得写 L2、标题精确命中仍可自动同步。
+
+### 测试基建与产品缺陷修复（同一批次）
+
+- **`session_recall` window 用例回归根因修复**：`_resume_related_cases` exact 匹配恢复"最新写入优先"——SQLite 重构时旧代码 `exact[-limit:]`（取尾=最新 case 排前）被误改为 `[:limit]`（取头），导致最新 case 永远排不进窗口。
+- **conftest 快照排除 `graph/` 运行时库**：WAL checkpoint 使 graph.db 本体哈希漂移，串行测试必然误报"测试篡改 fixture"；工件与 memory 内容仍在保护内。
+- **`lookup_navigation` found=False 分支补 `project_scope`**：负向锚定失败结果同样需要范围声明（impact/callers project-filter 断言依赖）。
+- **`_compact_impact_result` 容忍 `target` 为查询字符串**：found=False 分支不再 AttributeError。
+- **`test_cli_command_surface` 子命令组识别**：typer 0.27/click 8.4 的 TyperGroup 非 click.Group 实例，改按 `.commands` 识别。
+- **`workspace_resume_context` 补回 `session_id` 参数**（修复 NameError）+ CLI `resume-context --session-id` 透传。
+
+- **匹配源排除 current_summary**：`_task_match_analysis` 的匹配 haystack 不再包含 current_summary——它是每次 close 被当次 intent 覆盖的输出工件，作为输入即构成自写自匹配。context/requirement/design/plan/test_plan 等相对稳定工件保留为签名重叠强证据。
+- **通名弱化**：workspace 自身名字（含前缀关系，如 acme-all ↔ acme）与框架/中间件通名（feign/kafka/redis/dto/controller 等）加入 `_WEAK_TOKENS`——弱 token 即使命中 tag/title/intent 也不计强证据分，只算 fuzzy。
+- **status_boost 需强证据前置**：active(+2)/draft(+1)/high(+1) 加分只在已有 tag/title/intent 强证据时生效；仅凭正文模糊命中的大任务不再白拿状态分稳过阈值。
+- **stale 展示判定**：workspace overview 的任务列表引入 `effective_status`——active 任务超过 14 天（与 shadow retention 默认对齐）无 task-space 活动即展示为 `stale`，排序沉底；不改写 meta.json 的登记状态，另有 `registered_status` 字段保留原值。
+- **端到端验证（真实工作区）**：3 个曾误绑定的 intent 重放全部归为 new/ambiguous（此前全部误命中同一历史任务标题）；真绑定 intent 仍 high 置信命中；`mc_start` 全链路不再把误解析 task_id 写进 session metadata，close 时正确走 shadow fallback。
+
+## 4.6.24 Task Shadow Hardened Release / 任务影子加固发布
+
+- 发布 Task Shadow 加固版本：显式 L2 写入门禁、原子 CAS、确定性 source-to-shadow 映射与完整 write receipt 审计。
+- Released the hardened Task Shadow version with explicit L2 write gates, atomic CAS, deterministic source-to-shadow mapping, and complete write-receipt auditing.
+
+### Memory Enrichment：Evidence Index 渐进式披露 + Session Notes 叙事层 / Memory Enrichment: Evidence Index + Session Notes
+
+按 [MEMORY_ENRICHMENT_DESIGN.md](MEMORY_ENRICHMENT_DESIGN.md) 实现 AML 对标调研（MemOS / claude-mem / MemoraX）中的两项 P0/P1 能力；全部 additive，向后兼容。
+
+- **能力 A — Evidence Index 渐进式披露（P0）**：`memory_query_hybrid` 新增 `view="evidence-index"`（MCP `mc_lookup` / CLI `query --view` / HTTP `/workspace/query?view=` 三入口同义）。响应收缩为 `{kind, selected:[{ref_id, created_at, text, source_layer, source_kind, score, approx_tokens, estimated_tokens}], total_candidates, returned, truncated, approx_total_tokens}`；`claim_boundary`/`knowledge_state`/`freshness_status` 以标量保留，空结果负向门禁语义不变。文本绝对路径 fail-closed 过滤；列表默认 20 条、上限 50、`truncated` 诚实标注；第二跳展开复用 `mc_lookup(mode="ref")`。缺省 `view` 与既有富输出逐字节兼容。
+- **能力 B — Session Notes（L0.5 叙事记忆层，P1）**：新增 `core/tasks/session_notes.py`，存储于 `memory/session-notes.jsonl`（SQLite `json_records` 权威、JSONL 投影，`note_id` 作 record_id）。`mc_admin` 新增 5 个 action：`note_record`（同 fingerprint 幂等 no-op）、`note_list`（kind/status/session 过滤）、`note_search`（token 重叠评分，只搜 active）、`note_supersede`（旧条 `superseded_by` 留审计链，不物理删除）、`note_forget`（只隐藏具名条目）。隐私门 fail-closed：绝对路径（Unix/Windows/home）与密钥形态（`sk-`/Bearer/api_key= 等）直接拒收；`<private>...</private>` 片段落盘前剥除并记回执。所有写路径持久化 L0.5 write receipt。
+- **检索并入**：`mode="query"` 结果合并有界 `note_matches`（`source_kind=note`，与图谱证据并列）；evidence-index 视图同时含 note 命中（`ref_id=note:<note_id>`，`source_layer=L0.5_session_notes`）。
+- **mc_close 草稿**：`close_case_records` 返回 `note_drafts`（会话意图 → decision 草稿、risk_points → next_step 草稿、验证通过信号 → fact 草稿，确定性机械抽取、无模型调用）与 `note_drafts_hint`；草稿未确认绝不落盘。
+- **用户模型（能力 D，文档）**：USER_GUIDE 新增"记忆边界"小节，把 Coding/Repo/Personal/Procedure 四类边界映射到 L1 case、图谱+invariants、workspace_profile、team_rules 与 Session Notes。
+- **基础设施**：`MemoryBackend` 新增 `update_json_records(collection, record_id, updates)`（payload 合并更新）；`_infer_record_id` 支持 `session-notes.jsonl` → `note_id`；状态变更经 backend 更新 + `_sync_jsonl_export_locked(rebuild=True)` 重建投影，保证 SQLite 权威与 JSONL 导出一致。分层模型新增 `LAYER_L0_5 = "L0.5_session_notes"` 并加入 `MEMORY_LAYER_ORDER`（展示排序），workspace overview 的 `memory_layers` 输出新增 `note_count`/`active_note_count`。
+- **文档同步**：README（分层模型 + Evidence Index/Session Notes 两小节）、ARCHITECTURE（记忆模型表补 L0.5 层并修正 L1 case 文件名为 `cross-service-task-memory.jsonl`）、ONTOLOGY（记忆实体新增 SessionNote/TaskShadow）、MCP_GUIDE（`mc_lookup` view 参数 + note actions）、REFERENCE（view 契约 + note actions 详细参数）、USER_GUIDE（记忆边界小节）。
+- **真实工作区验证**：note 生命周期（record → fingerprint no-op → search → supersede 审计链 → forget）、evidence-index 真实图谱混合（note 与图谱方法并列、默认视图逐字节兼容）、`mode="query"` note 合并（已 forget 词返回空）、隐私门（绝对路径/密钥拒收、`<private>` 剥除）、`mc_close` 草稿不落盘、CLI/HTTP 入口冒烟——全部通过；验证数据已从 JSONL 与 backend 清除，常态内容零污染。
+- **回归**：`tests/domain/test_evidence_index.py`（9 个）、`tests/domain/test_session_notes.py`（11 个）、`tests/entrypoints/test_session_notes_entrypoints.py`（5 个：admin 三层动作、close 草稿不落盘、evidence-index 含 note）、`test_public_mvp.py` 新增 CLI/HTTP view 转发测试；修复 `test_mc_lookup_query_mode_forwards_vector_options` 假桩缺失 `session_id` 参数的既有失败（基线已坏，见 git 历史）。
+
+## 4.6.23 Task Shadow: Session-first Continuity / 会话优先任务连续性
+
+### Task Shadow：Session-first 任务连续性 / Task Shadow: Session-first Continuity
+
+按内部会话优先任务连续性方案实现 L1 Task Shadow 会话影子层；所有字段 additive，不改变既有 MCP tool schema。
+
+- **核心模块**：新增 `core/tasks/shadow.py`（snapshot 校验、source contribution、确定性 merge、CAS 绑定、discard/promote、retention）、`core/tasks/shadow_observations.py`（Observation Inbox，payload allowlist fail-closed、authority 切换）、`core/tasks/shadow_handoff.py`（Handoff Claim：claim-once + `expected_revision` CAS）、`application/task_shadow_flow.py`（mc_sync/mc_close 的 Shadow 逻辑下沉）。`RuntimeStore` 新增 `delete_session_state`/`list_session_states`。
+- **多源确定性 merge**：Shadow 按 `(source_provider_id, source_session_id)` 保存独立 contribution，各源独立 durable 水位；对外 merge 为排序 union，与到达顺序无关；幂等键 `(shadow_id, source_provider_id, source_session_id, durable_as_of_seq)`，相同/较旧水位为幂等 no-op，水位回退报 `stale_watermark`，schema 版本回退报 `state_version_regression`，版本超前标记 stale 并要求 resync。
+- **volatile 拒收**：`delivery_mode=volatile` 的快照直接拒收（`volatile_rejected`），`observed_as_of_seq != durable_as_of_seq` 拒收（`watermark_not_durable`）；入站快照走字段允许列表 fail-closed，未知字段直接拒收。
+- **facade 改造**：`mc_start` 自动创建/续接 session 所属 Shadow（fail-soft，不写 L2）；`mc_sync` 新增 `sync_target=auto|task|shadow`，低置信解析 fallback 更新 Shadow 而非放弃连续性，返回 `write_target`/`binding_status`；`mc_close` 输出 `binding_recommendation` 与 `promotion_options`（默认"保留为临时工作影子"），未绑定 Shadow 不写 L2。
+- **管理接口**：`mc_admin` 新增 `task_shadow_status`/`task_shadow_bind`/`task_shadow_suggest`/`task_shadow_promote`/`task_shadow_discard`/`task_shadow_retention`/`task_shadow_authority`/`task_shadow_observation_record`/`task_shadow_observation_list`/`task_shadow_handoff_*`。
+- **CLI**：新增 16 个 `task-shadow-*` 根命令（record-snapshot/status/bind/discard/promote/retention/observation/observation-list/authority/handoff 六件套）。
+- **HTTP**：新增 `/workspace/task-shadow-record-snapshot`、`task-shadow-status`、`task-shadow-bind`、`task-shadow-discard`、`task-shadow-promote`、`task-shadow-observation`、`task-shadow-observation-list`、`task-shadow-handoff`（action 路由）；写路由已登记 `_MUTATING_HTTP_PATHS`。
+- **回归**：`tests/domain/test_task_shadow.py`（26 个：幂等水位/merge 确定性/CAS/不污染 L2/allowlist/claim-once）、`tests/entrypoints/test_task_shadow_entrypoints.py`（7 个：CLI/HTTP/admin 三层语义一致）、`tests/domain/test_task_shadow_fixes.py`（10 个：评审修复回归）。
+- **评审加固（review hardening）**：
+  - **P0 L2 写入门禁前置**：`mc_sync(session_id=..., sync_target="auto")` 不再先写 L2 后标注——`case_sync_with_shadow` 先检查显式 `task_id` 或已 bound 的 session Shadow，未绑定时走 shadow-only 路径（`task_id_source` 标注来源），杜绝 `workspace_sync_case_to_artifacts` 自行 resolve/create task space 绕过隔离。
+  - **P1 intent 路径同样前置门禁**：`sniff_sync_with_shadow_fallback`（`mc_sync(intent=..., sync_target="auto")`）在调用 `_sniff_sync` 前同样要求显式 `task_id` 或可验证的 bound Shadow；未满足时直接 `shadow_only_sync`，不再先走底层 `create_if_missing=True` 的解析。
+  - **source→shadow 统一映射**：新增 `task_shadow_source_map_v1` 注册表，`record_shadow_snapshot` 与 `ensure_shadow_for_session` 都把 `(source_kind, source_session_id)` 登记到确定 shadow_id（同时登记 provider 前缀与 harness kind 两个 key）；Observation 折叠经 `resolve_shadow_for_source` 解析，与 Snapshot 落到同一 Shadow，authority 切换对全部路径生效。`ensure_shadow_for_session` 创建的 MC 内部 Shadow 默认 `shadow_authority=observation`。
+  - **P1 被拒收快照不改映射**：`record_shadow_snapshot` 在 durable 水位/state-version 校验前先查 `bound_shadow_for_source`——同 source 已绑定到不同 Shadow 时直接拒绝（`source_already_bound_to_other_shadow`）；映射只在成功接受后登记，stale/重复/回归快照不会重定向后续 Observation，也不允许未显式迁移的改绑。
+  - **原子 CAS**：`RuntimeStore.cas_session_state` 在单个 SQLite 事务内完成 revision 条件检查与写入（`json_extract` WHERE + rowcount 判定），Shadow 绑定、suggest、handoff 的 handed_off/claim/close/expire 全部迁移；两个进程持同一 revision 时只有一个写者成功，claim-once 与绑定 CAS 在并发下成立。
+  - **handoff_id 防碰撞**：追加 `uuid4` nonce 后缀，同 session 同秒重复创建不再覆盖已有 draft。
+  - **receipt 补齐**：authority 切换、ensure/create、suggest、handoff 过期（claim 与只读路径）均写 L0 write receipt。
+- **回归**：`tests/domain/test_task_shadow.py`（26 个：幂等水位/merge 确定性/CAS/不污染 L2/allowlist/claim-once）、`tests/entrypoints/test_task_shadow_entrypoints.py`（7 个：CLI/HTTP/admin 三层语义一致）、`tests/domain/test_task_shadow_fixes.py`（14 个：评审修复回归）。
+
+Task Shadow (L1 session-first continuity) implemented per the proposal; all additive.
+
+- **Core modules**: `core/tasks/shadow.py` (snapshot validation, source contributions, deterministic merge, CAS bind, discard/promote, retention), `shadow_observations.py` (Observation Inbox with fail-closed payload allowlist and authority switching), `shadow_handoff.py` (claim-once handoff with `expected_revision` CAS), and `application/task_shadow_flow.py` (shadow logic for mc_sync/mc_close).
+- **Deterministic multi-source merge**: per-source durable watermarks keyed by `(source_provider_id, source_session_id)`; idempotency key `(shadow_id, source_provider_id, source_session_id, durable_as_of_seq)`; stale watermarks and schema-version regressions are rejected, never forward-applied.
+- **Volatile rejection**: `delivery_mode=volatile` and `observed != durable` snapshots fail closed; unknown snapshot fields are rejected.
+- **Facade changes**: `mc_start` auto-creates/reuses the session shadow (fail-soft, no L2 writes); `mc_sync` gains `sync_target=auto|task|shadow` with shadow fallback on low-confidence resolution; `mc_close` returns `binding_recommendation` and `promotion_options` (default: keep as shadow).
+- **Surfaces**: 10 new `task_shadow_*` mc_admin actions, 16 `task-shadow-*` CLI commands, 8 HTTP routes (mutating ones registered as POST-only).
+- **Review hardening**: L2 write gate moved ahead of both case sync and sniff sync (unbound shadows never reach `workspace_sync_case_to_artifacts` or `workspace_sync_sniff_to_artifacts`); a `task_shadow_source_map_v1` registry routes observations and snapshots into the same shadow so authority switching applies everywhere, and rejected (stale/duplicate/regression) snapshots no longer rebind the source mapping; `RuntimeStore.cas_session_state` makes revision checks and writes one SQLite transaction (bind/suggest/handoff transitions are concurrency-safe); handoff ids carry a uuid4 nonce; authority switches, ensure/create, suggest, and handoff expiry all write L0 receipts.
+- **Regression**: `tests/domain/test_task_shadow.py` (26 cases), `tests/entrypoints/test_task_shadow_entrypoints.py` (7 cases covering CLI/HTTP/admin parity), `tests/domain/test_task_shadow_fixes.py` (14 review-fix regressions).
+
+## 4.6.22 Chain Gate Coverage and Fixture Recovery / 调用链门禁覆盖与 Fixture 恢复
+
+- 所有 `mode="chain"` 分支在 finalize 前统一补齐 chain anchor/scope gate；trace/group 缺少可验证锚点时保守标记 `missing`，路由检查异常一律 `scope_incomplete=true`。claim boundary 使用实际 chain 边数，不再把通用结果数误作调用链证据。
+- 恢复 demo workspace 的受保护 `graph.db` fixture 到 field-fix 提交前版本，移除测试运行时数据库状态。
+- Unified chain-gate coverage across trace/group branches and restored the protected demo graph fixture to its pre-test state.
+
+## 4.6.21 Field Fixes: Chain Gate, Task Write Gate, Freshness Snapshot / 实测修复：调用链门禁、任务写入门禁、freshness 快照
+
+来自真实会话复盘（见 [LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md](LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md) §5）的四个高优先级修复；全部为 additive 字段，不改变 MCP tool schema、CLI 或 HTTP 路由。
+
+- **P1-A 调用链锚定负向结论门禁**：新增 `core/orchestrator/chain_anchor_gate.py`。chain 响应携带 `chain_anchor_validation`（锚点与请求符号是否匹配）与 `chain_scope_validation`（shard 路由是否覆盖锚点项目）；锚定失败或范围不完整时空 chain 强制 `AMBIGUOUS`（reason codes `anchor_mismatch`/`scope_incomplete`），并返回 `fallback_action` 有界回退建议，不再产出 `VERIFIED_NEGATIVE`。空 chain 不再自动生成"确认不存在调用方"文案（`agent_next_steps` 改为回退指引）。跨服务路由对 camelCase 查询拆词打分，避免路由漏掉锚点项目。回归：`tests/domain/test_chain_anchor_gate.py`。
+- **P1-B 任务解析保守写入门禁**：任务匹配输出匹配来源分类（`tag_exact`/`title_exact`/`intent_exact`/`signature_overlap`/`fuzzy_token`）与 `resolution_confidence`/`auto_write_allowed`/`required_action`；低置信或歧义解析不再自动绑定 task space，`mc_sync` 的 sniff/case 同步停写并要求显式 `task_id`，显式 `task_id` 直接绑定不走自然语言解析。`mc_start` 把解析出的 task 绑定进会话，`mc_close` 优先复用会话绑定。CJK 匹配新增 anagram（同词不同序）与连续公共子串（LCS≥3）判定；修复 artifact 内容读取使用文件名导致解析失败被静默吞掉的潜伏 bug。回归：`tests/domain/test_task_resolution_write_gate.py`。
+- **P2-C freshness generation 快照**：`mc_start` 的 freshness 标记 `freshness_snapshot=true` 并携带 `observed_generation`/`observed_at`/`refresh_in_flight`；带 `session_id` 的 `mc_lookup` 在 generation 变化时返回 `freshness_transition`（如 `stale_to_fresh`），Agent 不再把启动时的 stale banner 当作当前查询事实。
+- **P2-D AGENTS 协议 chain 失败回退**：Agent 协议中 chain 推荐调用改为显式硬锚（`symbol="符号名"`），并新增规则：锚点不符、空 chain 或 `negative_claim_allowed=false` 时立即回退 `symbol`/`code` 查询，禁止把空结果当"确认不存在调用方"。
+
+Field fixes from a real-session retrospective (see LOOKUP_ARCHITECTURE_HANDOFF_PLAN.md §5); all additive, no MCP tool schema, CLI, or HTTP route changes.
+
+- **P1-A chain anchor negative-claim gate**: chain responses now carry `chain_anchor_validation` and `chain_scope_validation`; an empty chain under anchor mismatch or incomplete shard coverage is forced to `AMBIGUOUS` with a bounded `fallback_action`, never `VERIFIED_NEGATIVE` or "no callers" wording. Cross-service routing splits camelCase queries so the anchor project is not missed. Regression: `tests/domain/test_chain_anchor_gate.py`.
+- **P1-B task resolution write gate**: task matching classifies evidence sources and exposes `resolution_confidence`/`auto_write_allowed`; low-confidence or ambiguous resolutions no longer auto-bind a task space — `mc_sync` stops writing and requires an explicit `task_id`, while `mc_close` reuses the session-bound task from `mc_start`. CJK matching gains anagram and LCS-based subword checks; fixes a latent bug where artifact content reads failed silently on file-name lookups. Regression: `tests/domain/test_task_resolution_write_gate.py`.
+- **P2-C freshness generation snapshot**: `mc_start` marks `freshness_snapshot=true` with `observed_generation`/`observed_at`/`refresh_in_flight`; generation changes surface as `freshness_transition` (e.g. `stale_to_fresh`) on subsequent lookups.
+- **P2-D AGENTS protocol chain fallback**: chain recommendations now use an explicit hard symbol anchor and mandate fallback to `symbol`/`code` lookups when anchoring fails, instead of treating empty chains as verified absence.
+
+## 4.6.20 Facade Replay Isolation / 门面回放隔离
+
+- facade 回放使用临时 `.memory-center` 副本；仅 session 序列 case 注入随机 session ID，避免污染原 workspace 或复用旧 ledger。release-gate 仅返回变化计数，不再回显私有 case ID；facade baseline 改为带 SHA-256 的原子写入。
+- Isolated facade replay in a temporary workspace, randomized sequence-only session IDs, removed case IDs from release-gate output, and made facade baselines hashed plus atomically written.
+
+## 4.6.19 Shared Lookup Projections / 查询共享投影
+
+- context/search/chain 的纯投影迁入 `lookup_shared`，并从 Context/Navigation Port 移除相应 callback；Port 只保留真正的 facade 或运行时注入能力。
+- Moved pure context/search/chain projections into lookup_shared and removed them from feature Port injection.
+
+## 4.6.18 Feature-Scoped Lookup Ports / 查询功能 Port
+
+- `LookupDependencies` 拆为 `SymbolLookupPort`、`ContextLookupPort`、`NavigationLookupPort`、`DiagnosticsLookupPort`；每个 facade 只注入本能力域 callback，静态测试约束 Port 大小，避免重新形成 service locator。
+- Split the lookup dependency bundle into feature-scoped ports with size guard tests to prevent a new service locator.
+
+## 4.6.17 Lookup Dependency Inversion / 查询依赖反转
+
+- 新增 `lookup_shared.LookupDependencies`：query 兼容门面显式组装共享 callback，`lookup_context`、`lookup_symbols`、`lookup_navigation`、`lookup_diagnostics` 不再反向导入 query；新增静态边界测试防止循环依赖回归。
+- Added explicit lookup dependency injection and a static import-boundary test to prevent leaf lookup modules from importing the query facade.
+
+## 4.6.16 Lookup API Aggregation Split / 查询 API 聚合拆分
+
+- 完成第六步：`memory_context`、`memory_symbol`、callers/callees/search、refs/backend/tool-usage/discover 分别迁入 `lookup_context`、`lookup_symbols`、`lookup_navigation`、`lookup_diagnostics`；`query.py` 仅保留兼容门面、混合查询编排、walkthrough 和共享 payload helper，删除所有 legacy query API 实现。
+- Completed the lookup API aggregation split: context, symbols, navigation, and diagnostics now live in dedicated modules; query.py retains compatibility facades, hybrid orchestration, walkthrough, and shared payload helpers only.
+
+## 4.6.15 Lookup Contract Release Gate / 查询契约发布门禁
+
+- `release-gate` 新增可选 `--lookup-contract-cases` 与 `--lookup-contract-baseline`。无 case 时组件 skipped；只有已批准 baseline 的行为漂移会阻断发布；报告仅保留逻辑 case ID 和变化计数。
+- Added optional lookup-contract release-gate inputs. Only drift from an approved baseline blocks release; reports retain logical case IDs and change counts only.
+
+## 4.6.14 Lookup Behavior Contracts / 查询行为契约
+
+- 新增 `eval-lookup-contract` 与显式 `eval-lookup-contract-baseline-save`：回放脱敏 case，比较结果顺序、project scope、契约计数、knowledge state、guidance 与 served dedup 等规范化字段；无 baseline 不阻断，已批准 baseline 的差异返回 `block`。
+- Added lookup behavior-contract replay and explicit baseline approval commands; approved semantic response drift is reported as `block`.
+
+## 4.6.13 Contract Enrichment Split / 契约补充拆分
+
+- 将混合查询中的 Feign/MQ/API/Config 契约筛选、Feign→API path 关联和 contract routing 迁至 `lookup_contracts.py`；兼容门面和响应字段保持不变，并新增独立契约行为测试。
+- Extracted contract enrichment into `lookup_contracts.py` while preserving public response fields and adding independent contract behavior tests.
+
+## 4.6.12 Lookup Orchestration Split / 查询编排拆分
+
+- `memory_query_hybrid` 保留兼容门面，内部拆分为 `lookup_scope`、`lookup_execution`、`lookup_decorators`、`lookup_response`；范围推断、分片检索、项目后处理及响应/观测边界不再集中在单一函数。
+- Split hybrid lookup orchestration into scope, execution, decorators, and response components while preserving the existing CLI, HTTP, MCP, and response contracts.
+
+## 4.6.11 Projection Health Gate / 投影健康门禁
+
+- `backend-consistency` 新增只读 `jsonl_projection` 摘要，并支持 `--repair-exports --apply` 显式恢复；Workbench quality overview 同步展示 projection 的状态、dirty 数与待同步数。
+- Added JSONL projection health to backend consistency and the Workbench quality overview, with explicit `--repair-exports --apply` recovery.
+
+## 4.6.10 Recoverable JSONL Projections / 可恢复 JSONL 投影
+
+- 本地包、CLI 与 MCP 运行时版本递增至 `4.6.10`；SQLite 成为 JSONL collection 的唯一事实源，导出水位和 dirty 状态可由 artifact 命令审计与恢复。
+- Bumped package, CLI, and MCP runtime metadata to `4.6.10` with SQLite-authoritative, recoverable JSONL projections.
+
+- 新增统一 JSONL projection 水位：所有 `WorkspaceStore.append_jsonl(_batch)` 在 SQLite 提交后记录导出进度；导出失败标为 dirty，下一次写入自动重建，也可通过 `artifact jsonl-export-status|jsonl-export-sync --apply` 显式诊断和恢复。JSONL 不再承担权威状态。
+- Added a uniform JSONL projection watermark: SQLite remains authoritative, export failures become dirty/recoverable, and the artifact CLI provides status plus explicit recovery.
+
+## 4.6.9 Session-State Architecture / 会话状态架构
+
+- 会话派生状态新增 `SessionStateRepository`：已服务文件账本不再由 foundation 直接维护 JSON 文件或进程缓存，改由 SQLite `session_state` 作为权威库，并沿用工作区审计锁、有界 500 路径/50 会话及失败降级语义。
+- case 记录新增稳定 `case_id`；resume 在提供 session 时写入精确 `case_recalled` 事件。热度优先按 case ID 聚合，保留旧 `agent_guidance` 文本匹配作为历史兼容回退。
+- `select_retrieval_policy` 保持纯函数，新增可选 `purpose_deltas` 参数；`rules/retrieval-policy.yaml` 可覆盖已知 purpose 的候选、证据和图深度 delta，非法字段降级为内置默认。
+- Added a SQLite-backed `SessionStateRepository`, stable `case_id` / `case_recalled` recall events, and workspace-overridable purpose deltas in `rules/retrieval-policy.yaml`; existing public responses and failure-degradation behavior remain compatible.
+
+- 新增**会话事件滚动归档**（设计参考 OpenViking session/retention 的纯策略模式）：`core/orchestrator/retention.py` 提供无 IO/无模型的 planner——把 session events 聚合为逻辑轮次（`user_prompt`/`note`/`session_start` 为边界），在 `keep_recent_turns` + `max_archive_tokens` 预算下选择 archive/live 边界；`session_end` 类锚点事件永不归档。执行器 `archive_session_events` 把归档段迁入 `session-events-archive.jsonl`（SQLite + 文件双写），live 集合按 session 过滤裁剪（新增 `MemoryRecordOperations.delete_session_records`），全程保持 SQLite 权威与文件导出一致。CLI 新增 `session-archive-plan`（dry-run）与 `session-archive`。
+- 新增**外置 payload 确定性摘要**（设计参考 OpenViking tool_result_synopsis）：`core/foundation/synopsis.py` 按 json/csv/tsv/yaml/xml/code/text 分类，每类有界采样常量，纯函数无模型依赖。超过内联上限被 offload 的 session event 现在在事件本体保留 `_payload_synopsis`，`workspace_recent_evidence` full 视图透出 `synopsis`、compact 视图透出 `synopsis_title`/`synopsis_kind`，使 resume/handoff 无需展开 payload 即可判断证据内容。
+- 新增 **L1 case schema 化与字段级合并算子**（设计参考 OpenViking MemoryTypeSchema 与 merge_op 包，均为纯函数无 LLM）：
+  (1) `core/foundation/merge_ops.py`——`immutable/replace/append/sum/patch` 五算子与 SEARCH/REPLACE 块 handler（行级匹配、失配保守报错、不做模糊猜测）；
+  (2) `core/knowledge/case_schema.py`——`engineering_case` 内置 schema（既有 case 字段全部保留，新增三段式 `situation/approach/reflect` 与可累计 `executions/successes`）+ workspace `rules/case-schemas.yaml` 覆盖 + required/类型/段落头校验；
+  (3) 三处接入：`record-case` 新增 `extra_fields` 与 `schema_validation` 返回（校验失败不阻断写入，additive 兼容）；`suggest-case` 附带 `case_writing_guide`（三段式写作纪律：互斥/原子/抽象/失败转禁令/可执行）；`decide-consolidation-candidate` approve 时按 append/sum 算子把同主题失效 case 的经验计数并入新 case，返回 `merge_notes` 说明。
+- 新增三项检索与上下文治理增强（设计参考 OpenViking memory_lifecycle / context_assembler ledger / PURPOSE_PRESETS，均为纯函数、失败降级、不新增 MCP tool）：
+  (1) **case 热度排序**：`core/foundation/hotness.py` 提供 `sigmoid(log1p(active_count)) × 指数时间衰减`（半衰期 7 天）的纯函数；`_resume_related_cases` 的 exact/cjk 两组命中按热度重排，命中信号来自既有 `agent_guidance`/`case_hit` 事件，**零命中 case 保持原序**（微秒级创建时间差不引起重排，评估语义不变）；读取失败降级为原排序。
+  (2) **跨调用已服务文件账本**：`core/foundation/served_ledger.py` 按会话记录 `mc_lookup` 响应交付的文件路径（有界 500 条/会话，50 会话）；`memory_query_hybrid` 新增可选 `session_id`，已服务文件得分 ×0.5 并标记 `_served_before`；路径匹配仅接受精确或绝对/相对目录后缀形态，不以 basename 猜测；账本任何失败降级为不去重，不阻断查询。
+  (3) **任务 purpose 预算预设**：`select_retrieval_policy` 按 `classify_purpose`（full_chain / contract_change / quick_fix / general，确定性归并，契约类优先于快速修复）对 candidate_limit/evidence_budget/graph_depth 施加 additive delta（契约类 +6/+2，快速修复 -6/-1），`RetrievalPolicy.to_dict` 新增 `purpose` 字段。
+- Added three retrieval/context governance enhancements adapted from OpenViking (pure functions, degrade-on-failure, no new MCP tools): case hotness ranking with 7-day half-life decay over existing guidance events (zero-hit cases keep original order), a per-session served-file ledger with bounded cross-call dedup downweighting in hybrid query, and purpose-based budget presets (contract_change widens, quick_fix narrows) surfaced additively through `RetrievalPolicy.purpose`.
+
+## 4.6.8 Local Package Refresh / 本地包刷新
+
+- 递增本地包、CLI 和 MCP 运行时版本至 `4.6.8`，发布会话记忆归档/摘要、case schema 合并和检索上下文治理增强；已服务文件去重通过 MCP、CLI 和 HTTP 的 `session_id` 入口生效。
+- Bumped local package, CLI, and MCP runtime metadata to `4.6.8`, covering session retention/synopsis, case-schema merging, and retrieval-context governance; served-file downweighting is active through MCP, CLI, and HTTP session-aware query paths.
+
+- Added typed L1 case schema and field-level merge operators adapted from OpenViking's MemoryTypeSchema/merge_op designs (pure functions, no LLM): five merge ops with a conservative SEARCH/REPLACE handler, a builtin engineering-case schema with workspace YAML overrides and bounded validation, writing-guide output on suggest-case, and append/sum discipline merging superseded same-topic cases into approved consolidation candidates with merge notes.
+- Added rolling session-event archive and deterministic payload synopsis, both adapted from OpenViking designs (pure strategy planners, bounded constants, no model dependency): turn-boundary archive planner with live-anchor protection, session-scoped prune via a new backend delete API, synopsis embedded into offloaded events and surfaced through recent-evidence full/compact views, plus `session-archive-plan` / `session-archive` CLI commands.
+
+- 基于代码事实校准活跃文档：MCP 公开面统一为 15 个 task-level tools（README/ARCHITECTURE/CLAUDE.md/server.py docstring，含 `insights.py` 注册的 4 个）；MCP resources 补齐 `memory-center://startup-diagnostics`（共 4 个）；CLI 命令族修正为 18 个模块（补 `artifacts`、`workspaces`）。
+- `user_prompt_submit` hook 默认行为按代码事实修正：默认 `enabled: true` + `record_only: true`（只记录脱敏交互，不注入提示、不阻塞输入，宿主 adapter 只生成记录型配置），替换旧的"默认禁用/enabled: false"表述（README、MCP_GUIDE、REFERENCE、ARCHITECTURE H.3/H.4、AI_DEV_GUIDE）。
+- Workbench 页面列表补齐：README 与 USER_GUIDE 现列出 `/ui/assertion`、`/ui/jobs` 等全部 11 个已注册 `/ui` 路由。
+- Aligned active documentation with code facts: MCP surface is consistently documented as 15 task-level tools (including the 4 registered in `insights.py`), resources now include `memory-center://startup-diagnostics`, CLI families corrected to 18 modules, `user_prompt_submit` defaults documented as `record_only` (sanitize-record only, no prompt injection or blocking), and Workbench page lists now cover all registered `/ui` routes.
+
+- 全面收敛当前文档至 4.6.7：README、架构、MCP、用户与参考文档现在统一说明 quality-gate、validation_plan、primary_chain、retrieval replay、分桶刷新预算、SQLite-first 索引镜像与 Workbench 质量总览；主计划移除已完成事项，历史研究和实施回执保留其历史状态。
+- Consolidated current documentation around 4.6.7: README, architecture, MCP, user, and reference guides now consistently cover the quality gate, validation plan, primary chain, retrieval replay, bucketed refresh budgets, SQLite-first index mirrors, and the Workbench quality overview. The roadmap no longer treats completed work as pending; historical research and receipts retain their historical status.
+
+## 4.6.7 Local Package Refresh / 本地包刷新
+
+- 将包元数据、CLI 与本地安装版本对齐并递增至 `4.6.7`，覆盖已完成的 4.6.0–4.6.6 质量、检索、存储与刷新预算改动。
+- Aligned package metadata, CLI, and local installation to `4.6.7`, covering the completed 4.6.0–4.6.6 quality, retrieval, storage, and refresh-budget changes.
+
+## 4.6.6 Refresh Budget Tiering / 刷新预算分层
+
+- scoped refresh 按**变更类别/范围分桶**（`classify_refresh_bucket`）：category = plain_java / contract / delete_or_move / unknown；scope = single_file / multi_file_single_service / multi_service / multi_file。每桶独立预算（`BUCKET_BUDGETS_MS`：单文件低风险 8s、单文件契约 15s、多服务契约 60s 等）。
+- `record_scoped_refresh_performance` 持久化 `bucket`；`scoped_refresh_performance_status` 按桶聚合 P50/P95/dominant/budget，并返回 `over_budget_buckets`；**legacy 无 bucket 样本（unknown/multi_file）不参与判定**；**仅 ≥5 样本且 P95 超本桶预算才标记 over**。
+- quality-gate 用分桶判定（`over_budget_buckets`），不再用全局 P95 混合比较所有刷新。
+- 真实工作区采样：单文件刷新（contract/plain/delete/unknown 各桶）P50 ~37-47s、**dominant 全为 `generation_publish`**（服务分片 JSON 导出），但无桶达 5 样本 → 触发停止条件，**不进入优化**，仅交付分桶基础设施与报告。
+- 新增 12 个分桶测试；全量回归绿、IR gate 通过。
+- Added per-bucket refresh budget tiering (category/scope) so a single low-risk file is never compared against a multi-service contract refresh with one global P95; legacy samples and <5-sample buckets don't gate the decision.
+
+## 4.6.5 Coverage Semantic Calibration / 覆盖度语义校准
+
+- coverage 原因细分：skipped 按 reason 拆分为 **`irrelevant_excluded`**（`unsupported_syntax`：xml/png/json/md 等明确无关的非源码资源）与 **`relevant_unsupported`**（相关但解析器不支持）。
+- `claim_boundary` 语义校准：**明确无关的排除资源不再阻断否定性结论**；只有 `relevant_unsupported` / `parse_failed` / `scope_unknown`（含 partial/failed/unknown）才阻断。legacy 无 reason 时保持保守（skipped 仍阻断）。
+- `quality-gate` 同步：coverage 检查只把 relevant-unsupported/failed/unknown 计为 unclean，irrelevant-excluded 仅审计。真实工作区实测 coverage 从 attention → **pass**（批量无关资源不再制造永久 attention），claim_boundary 从 `coverage_partial` 阻断 → 仅剩 freshness 信号。
+- **未降低 coverage 标准**：真实工作区 relevant_unsupported=0、failed=0、unknown=0，无任何真实相关未覆盖被放宽；所有跳过仍保留审计。
+- 测试更新：`relevant_unsupported` 阻断、`irrelevant_excluded` 不阻断、demo 集成断言校准；全量回归绿、IR gate 通过。
+- Calibrated coverage semantics: explicitly irrelevant excluded resources no longer block negative claims or the release gate; only relevant-unsupported/parse-failed/scope-unknown do, with no coverage-standard reduction.
+
+## 4.6.4 Release Quality System / 发布质量体系
+
+四子项目收敛为长期可发布的质量保障能力（均为 additive / 只读，未改 parser/resolver/schema）：
+
+1. **统一发布质量门禁** `quality-gate`（`core/assessment/health.py`）：A-E 五组检查（generation 健康 / 契约与 coverage / retrieval replay + perf / IR diff gate / 存储 dry-run），输出 pass|attention|block|real_case_missing 决策；只读，不执行 reindex/GC/VACUUM/用户命令。
+2. **change_review validation_plan**（additive）：按 DTO/Feign/HTTP/MQ/Config/私有方法/删除的风险类别给出最小可证伪验证方案；MQ 缺 destination → `insufficient_evidence`，contract block → `blocked`；不执行命令。
+3. **索引镜像依赖审计**：确认 7 个候选索引均已在 `RUNTIME_ONLY_INDEXES`（SQLite 权威），JSON 文件读取 = 0、无重复导出残留，无需新增清理。
+4. **Workbench 只读质量/空间视图** `workspace_quality_overview` + HTTP `/workspace/quality-overview`：聚合 release gate / refresh P95 / IR gate / storage dry-run，脱敏、有界、不读私有正文。
+- 新增 `test_quality_health_gate.py`（6）+ `test_change_review_validation_plan.py`（7）；CLI snapshot 更新；全量回归绿、IR gate 通过（edge_coverage 1.0 / forbidden 0）。
+- Converged the completed capabilities into a long-running quality system: a read-only release quality gate, change-review validation plans, index-mirror dedup audit, and a sanitized workbench quality/storage overview.
+
+## 4.6.3 Storage Space Reclaim / 存储空间回收
+
+- 按诊断结论执行安全回收（不影响 active/previous）：
+  1. **删除孤立 `gen-perf-test`**（profile 测试污染、未注册）：generations/ 体积减少约三分之一；
+  2. **IR 双重去重**：`java-ir-index.json` 加入 `RUNTIME_ONLY_INDEXES`，SQLite index_mirror 权威、删除 index/ 文件副本（与 java-symbol-index 一致）；
+  3. **VACUUM**：`storage-vacuum --apply` 回收 freelist + 页重整，graph.db 体积减少约 15%。
+- 空间回收约四分之一。验证：IR gate 通过（edge_coverage 1.0 / forbidden 0）、coverage 不降、freshness FRESH、查询 smoke 正常、全量测试绿。
+- Reclaimed roughly a quarter of the space safely: removed the orphan test generation, de-duplicated the java-ir-index JSON mirror, and VACUUMed graph.db, with IR gate/coverage/query all verified intact.
+
+## 4.6.2 Graph.db Space Diagnostic / 存储空间只读诊断
+
+- 只读诊断 `graph.db` 与 `generations/` 的空间构成（**未执行任何清理**）：
+  - generation 服务分片（3 gen，每 gen 多分片物理复制）；含孤立 `gen-perf-test`（profile 测试污染，未注册）
+  - index_mirror（java-ir-index 双重占用 + java-symbol-index）
+  - edges+索引、FTS、倒排（必要）
+  - freelist（可安全回收）
+- 可安全回收约四分之一（孤立 gen-perf-test + IR 双重 + freelist），不影响 active/previous generation。
+- dry-run：generation-gc 0 候选、semantic-compact 无候选；VACUUM 未执行（需授权）。
+- 建议（不执行）：删孤立 gen、IR 双重去重、VACUUM、服务分片软链继承。详见本轮的图数据库空间诊断回执（内部资料，不随公开仓库发布）。
+- Added a read-only storage space diagnostic covering graph.db and generation shards, with roughly a quarter safely reclaimable (orphan test generation, duplicate IR mirror, freelist) and no cleanup executed.
+
+## 4.6.1 Scoped Refresh Performance / 局部刷新性能
+
+- 真实工作区性能归因：单文件局部刷新 70s，profile 定位 `build_java_ir_index` 每次刷新**全量重算 IR 候选（13s）**且被 `mark("graph_update")` 错误计入 graph_update 阶段，是 graph_update 17-25s 的根因。
+- 修复：partial 刷新改用 `_merge_ir_partial`（新增）——只对 scoped 文件重算 IR 候选 + 继承未变更文件候选（与 file-index 的 merge 一致）。单文件 IR 重算 13s → 1.9s（6.8×），真实 Controller 刷新 70s → 55s，graph_update 25s → 14s；candidates 覆盖不降。
+- 新增 `test_ir_partial_merge.py`（继承未变更候选、全量重建 drop 删除文件候选）；全量回归绿、IR gate 通过（edge_coverage 1.0 / forbidden 0）、coverage 不降。
+- 存储健康（只读）：graph.db 增长风险已记录（未自动清理）；generation 3 个、job 无泄漏、publications 19 条。
+- Added scoped-refresh IR partial-merge: a full-candidate IR rebuild per partial refresh was the graph_update hot path; now only the scoped files are re-resolved and unchanged files' candidates are inherited (13s→1.9s, 70s→55s real refresh).
+
+## 4.6.0 Retrieval Replay Evaluation / 检索回放评测闭环
+
+- 新增显式、脱敏、可复跑的 retrieval replay 评测基础设施 `memory_center/core/benchmark/retrieval_replay.py` + CLI `eval-retrieval-replay-cases`：从 case 文件驱动 `mc_lookup(auto)`，逐条捕获脱敏结构化结果、按 10 类失败分类、聚合 quality/performance 指标；只读，不 refresh/reindex。
+- case 文件与查询映射位于仓库外（gitignore `private/`、`*.replay-private.yaml`）；仓库仅含匿名示例 `examples/retrieval-replay-cases.example.yaml`，无真实 query/path/source。
+- 真实 18 条 replay 基线：primary-chain recall 1.0、wrong-chain rate 0、project-scope regression 0、Feign/HTTP 应链路全部 found、负例/MQ/stale 边界正确；`ANCHOR_RANKED_LOW` 仅 1 例（含方法名的 Feign 接口查询被 Class 抢占）。
+- Phase C 修复门禁判定：同类失败 <3，**不改 retrieval**，交付评测报告；唯一代码改动是 `classify_outcome` 尊重 expected.anchor.kind（评测工具自身分类 bug）。
+- 新增 11 个 replay runner 单测；全量回归绿、IR gate 通过。
+- Added an explicit sanitized retrieval-replay evaluation harness and CLI; a 18-case real baseline found no provable retrieval change (single-class failures <3), so no code change was made.
+
+## 4.5.9 Replay Calibration / Replay 校准（跨服务主链路）
+
+- 新增 18 条脱敏 replay case 集（Feign 4 / HTTP 4 / 同名 3 / 反例 3 / MQ 2 / project 2），在真实多服务工作区跑 `mc_lookup(auto)` 校准。
+- 修复 3 处 retrieval 问题（均不改 parser/resolver/schema）：
+  1. `extract_symbol_like_token` 支持 `Class.method` 形式，`Service.getUserName` 不再被截断为类名，symbol 命中 Method；
+  2. `find_primary_service_chain` 对缺 node id 的 Method anchor 按 name 精确解析真实 id，BFS 可启动；
+  3. `workspace_lookup_hint` 符号定位优先：含 `Controller`/`Service`/驼峰方法名时不被 `api` token 降级到 context。
+- 修复后 Feign 主链路 0/4 → 3/4 found、HTTP 0/4 → 2/4 found；反例 3/3 not_found 不编造；MQ 2/2 `insufficient_evidence` 正确边界；project 2/2 非 code-only。
+- 失败分类：`CHAIN_WRONG` 0、`CHAIN_MISSING_WITH_GRAPH_EVIDENCE` 0；剩余为同名干扰 `ANCHOR_RANKED_LOW`（证据边界，不模糊匹配修复）。
+- 新增 4 个排序/路由锚点测试（Class.method 提取、hint 符号优先、anchor id 解析、Class.method 完整保留）；IR gate 通过（edge_coverage 1.0 / forbidden 0）；默认 symbol P95 ~2ms。
+- Added replay calibration: 18 sanitized cases, 3 retrieval-only fixes (Class.method token, anchor-id resolution, symbol-over-api hint priority), and Feign/HTTP main-chain hit-rate improvement without parser/resolver/schema changes.
+
+## 4.5.8 MQ Bridge Honesty / MQ 桥接诚实状态
+
+- `find_primary_service_chain` 对 **MQ Producer 锚点**新增诚实状态：当该 Producer 的 Topic 无法在本地索引中证明其消费者（consumer 的 binding→destination 映射在配置中心，本地不可得）时，返回 `insufficient_evidence` + 明确 reason（`mq_topic_consumer_unprovable` / `mq_producer_no_topic_edge`），**绝不**返回误导性的 `not_found`（那会暗示"无消费者存在"），也绝不编造消费者。
+- 真实驱动（真实工作区全量 MQ 证据筛选）：producer topic 是业务名（`acme-order-created`），consumer 是 Spring Cloud Stream 绑定名（`spring.cloud.stream.bindings.acmeOrderCreatedTask`），两者无固定前缀可归一化（剥离 `acme-<domain>-` 后驼峰匹配一对一数为 **0**），destination 映射不在本地源码/索引。**触发任务停止条件**：不实现 MQ canonical topic 桥接，保留 `insufficient_evidence`。
+- 桥接诚实性不影响既有 Feign/HTTP 主链路：真实工作区回归 Feign found / HTTP found / 反例 not_found 不变，IR gate 通过（edge_coverage 1.0 / forbidden 0）。未改 resolver/parser/schema。
+- Added honest MQ status: MQ Producer anchors whose consumers cannot be proven return insufficient_evidence with an explicit MQ reason instead of a misleading not_found, after real-workspace evidence showed no fixed-rule topic normalization exists.
+
+## 4.5.7 Primary Cross-Service Chain / 跨服务主链路
+
+- 新增 `memory_center/core/retrieval/primary_chain.py`：`find_primary_service_chain` 从 Method 锚点做有界分层 BFS，返回一条可解释的跨服务主链路（入口 Method → Feign 接口方法 → FeignMethod → 下游 Endpoint，或 HTTP Controller → Endpoint，或 MQ Producer → Topic → Consumer）。
+- 主路径关系白名单（CALLS_SERVICE / IMPLEMENTS_FEIGN / HANDLES_ENDPOINT / PRODUCES_TOPIC / CONSUMES_TOPIC / CALLS_METHOD）；结构边（CONTAINS / DECLARES / IMPORTS 等）永不作链路主体。路径按 relation_weight × confidence × evidence × depth_decay 评分，确定性排序（EXTRACTED > INFERRED、跨服务 > 局部、高分 > 低分、短路径优先、stable id tie-break）。
+- Feign 接口 Method 通过 retrieval 层名字桥接到 FeignClient/FeignMethod（桥接步骤标 INFERRED，不虚标 EXTRACTED）；beam search 控制扩展宽度。
+- `mc_lookup(auto)` 对已解析出 Method 锚点的 symbol 查询（非 fast tier）附加 additive 字段 `primary_chain`（status/anchor/steps/score/evidence_level/generation/reason_codes）；best_match、candidate_paths 等保留不动。fast tier 跳过以保持 P95 平坦；无图证据时返回 not_found/insufficient_evidence，不编造链路。
+- 真实 replay（真实工作区）：Feign 完整三服务链 found（INFERRED，435ms）、HTTP Endpoint found（EXTRACTED，7ms）、无链路反例 not_found（7ms，不编造）。未改 Java resolver/parser；IR gate 保持通过（edge_coverage 1.0 / forbidden 0）；默认 symbol 查询 P50 2ms 不受影响。
+- Added a bounded primary cross-service chain for Method anchors in mc_lookup(auto), with deterministic ranking, Feign/MQ/HTTP bridge semantics, a no-fabrication contract, and per-tier budget gating.
+
+## 4.5.6 CamelCase Symbol Retrieval Routing / 驼峰符号检索路由
+
+- `workspace_lookup_hint` 新增纯驼峰符号识别：小写开头、以类型后缀结尾或动词前缀开头的标识符（`getClusterUniversalStateForAppMachine`、`findOrderById` 等）即使无 `service/method` 等关键词，也路由到 `symbol_lookup` 而非 `local_search`/`code`。
+- `extract_symbol_like_token` 修复：小写开头的驼峰方法名不再被截断成内部大写片段（原本 `getCluster...` 会被提取成 DTO 名 `ClusterUniversalStateForAppMachine` 导致方法检索不到）；类名/链式/`Class#method` 提取保持兼容。
+- 真实驱动：真实工作区检索 replay 发现 `getClusterUniversalStateForAppMachine`（图中有 27 条边的方法节点）默认被路由到 code，返回文件而非方法；修复后 `mc_lookup(auto)` 命中 `Method:ClusterConfigService.getClusterUniversalStateForAppMachine`。
+- 新增 4 个检索锚点/排序回归测试；不改 Java resolver。真实工作区检索 replay 确认纯驼峰方法名命中 Method 节点、edge_coverage 保持 1.0。
+- Fixed camelCase method-name routing: pure `getXxx`/`findXxx` queries now go through symbol lookup and extract the full method name (not an inner DTO fragment), surfacing the Method node over file-level code search.
+
+## 4.5.5 Keyword Pseudo-Call Filter / 关键字伪调用过滤
+
+- `_parse_method_calls` 关键字黑名单补齐 `synchronized`/`assert`/`throw`，并新增 receiver 侧关键字过滤（`class`/`new`/`instanceof`/`synchronized` 等），消除 regex 把 `synchronized (lock) {}` 语句头与 `Foo.class.getName()` 类型字面量误判为方法调用的垃圾边。
+- 真实驱动：真实工作区中 `DateUtil.getDateFormat -> synchronized()`、`X.class.getName()` 落进 `unqualified_or_dynamic` 桶且永远不可解析；修复后这些边在索引中消失，`this`/`super` 等合法 receiver 不受影响。
+- 新增 5 个逻辑锚点测试（synchronized 块、class 字面量、关键字全集、真实调用保留、this/super 保留）；acme-rap-util 局部刷新验证伪调用边 0，IR diff gate 不回退（edge_coverage 1.0 / forbidden 0）。
+- Added keyword pseudo-call filtering: statement keywords and type-literal receivers are no longer emitted as call rows, removing unresolvable garbage edges driven by real-workspace evidence.
+
+## 4.5.4 Java IR Boundary & Diff Gate / Java 解析 IR 边界与差分门禁
+
+- Java 解析器现在显式输出 IR：新增 `memory_center/core/indexing/java_ir.py`，把 `java-symbol-index.json` 投影为 `FileRecord` / `SymbolRecord` / `RelationCandidate`（复用与图投影同一个 `JavaCallResolver`，保证差分可比），并持久化为 additive 的 `java-ir-index.json`。
+- 新增 `memory_center/core/indexing/diff_gate.py`：把 IR 候选投影成与 legacy 图边同格式的 CALLS_METHOD 边，对比真实图数据。指标：anchor_recall（IR 源方法在图中的存在率）、edge_coverage（legacy 图中被 IR 覆盖的边比例，无回退硬指标）、forbidden_hit（AMBIGUOUS 是否被伪造为确定边，必须为 0）。当前 legacy 图投影保持权威，IR 投影作为显式边界与差分基准。
+- 真实工作区数据 gate 通过：anchor_recall 0.9977（缺失为构造器/方法引用目标，IR 比图更完整）、edge_coverage 1.0、forbidden_hit 0.0、ambiguous 0.55（外部依赖边界）。
+- Added the explicit Java IR boundary with relation candidates projected through the same resolver as the graph, plus a differential gate proving IR does not regress anchor/edge coverage or forbidden-hit before any switch.
+
+## 4.5.3 Generation-Local Staging / 代际本地暂存与发布合并
+
+- 新增 `memory_center/core/indexing/staging.py`：每次 reindex 的合并中间产物（`file-index.json`、`java-symbol-index.json`、`api/feign/mq/config-index`、topology、契约快照/差异）先进入代际本地 overlay，不再直接写 canonical `index_mirror`；读取优先命中 staging，发布时通过 `publish_generation_payloads` 在单个 `BEGIN IMMEDIATE` 事务内原子提交全部 staging + 指针翻转。
+- 失败或取消的 run 直接丢弃 overlay，canonical 中间产物与上一 active generation 完全不受影响；非重叠项目刷新各自维护 staging，不会互相覆盖，publish 串行合并。
+- Added generation-local staging: merged intermediates are buffered per-run and committed atomically at publish, so failed/cancelled runs never half-publish and parallel non-overlapping refreshes keep their own staging.
+
+## 4.5.2 Code Graph Contract Completion / 代码图谱合同收口
+
+- `index_context` 现在按 project/path 收窄 coverage；模板的 timeout/truncation 预算会进入 `claim_boundary`，截断结果不能生成否定性结论。
+- `plan_change_risk` 成为实际的 generation-keyed 内部模板，CLI、HTTP 与 MCP 的 change review 均经此模板执行。
+- reindex 接口可传递声明性的 `owner_actor` 与 `owner_session_id` 到 SQLite job ledger；未提供认证上下文时仍只表示调用方声明身份。
+- Narrowed coverage by project/path, propagated template timeout/truncation into the negative-claim gate, wired the real change-risk template through every existing facade, and propagated declared reindex ownership into the SQLite job ledger.
+
+## 4.5.1 Local Package Refresh / 本地包刷新
+
+- 将本地包元数据和 CLI 版本递增至 `4.5.1`，用于重新安装当前工作区构建。
+- Bumped the local package metadata and CLI version to `4.5.1` for reinstalling the current workspace build.
+
+## 4.5.0 Code Graph Foundation / 代码图谱基础设施
+
+实现 [CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md](decisions/CODE_GRAPH_FOUNDATION_IMPLEMENTATION.md) 的 Phase A–D；经真实大规模工作区验证。
+
+- **Phase A 可信查询合同**：`mc_lookup` / `mc_analyze` / `mc_freshness` / change review 响应新增 additive 字段 `index_context` 与 `claim_boundary`（否定性结论门禁）；索引管线记录每文件 parse_status/skip_reason，发布时聚合 `coverage_summary`。旧代工作区无 coverage 时标 `coverage_unknown` 并强制拒绝否定性结论。
+- **Phase B 有界图查询模板**：新增 `find_symbols` / `trace_call_paths` / `find_contract_consumers` 内部模板，fast/standard/deep 三档硬预算、确定性排序、generation 键控缓存；经既有 mc_lookup/mc_analyze 路由，不新增 MCP tool。
+- **Phase C 运行治理**：reindex job 权威状态迁入 SQLite（fingerprint 合并/冲突、owner/lease 15s/heartbeat 5s、retry 血缘）；generation 发布在单 `BEGIN IMMEDIATE` 事务内原子完成 + 只读 smoke + 失败自动回滚；CLI 新增 `job-cancel`。
+- **Phase D 解析 IR 边界**：显式 `FileRecord`/`SymbolRecord`/`RelationCandidate` 与确定性 `stable_id`；不可证明目标保留为 AMBIGUOUS 诊断并导出 `index-resolution.json`；差分报告新增 `symbol_category_counts`。
+- **性能基线**：`performance-snapshot` 纳入模板路径（schema v2）。真实工作区实测（standard tier）：`memory_query_hybrid` P95 94ms，`find_symbols` P95 3.5ms、`trace_call_paths` P95 3.9ms。
+- Added the Code Graph Foundation Phase A–D: trustworthy query contract with a negative-claim gate, bounded query templates with per-tier budgets, SQLite job-ledger governance with atomic publication and automatic rollback, an explicit parser IR boundary with aggregated unresolved diagnostics, and a template-inclusive performance baseline.
+
+## 4.4.2 Task Delivery Command Center / 任务交付中心
+
+- 新增只读 `/workspace/task-delivery-overview`，聚合 focus task 的 DSH 交付摘要、验证状态、回执和有界时间线，供 DSH 任务页展示交付中心。
+
+## 4.4.1 DSH Focus-Task Binding / DSH 焦点任务绑定
+
+- DSH 交付摘要捕获现在自动解析当前 focus task 并写入 `task_id`；任务页只展示归属该任务的交付摘要和 Wiki 晋升候选，Case/Wiki 来源链保留 session 与 task 归属。
+
+## 4.4.0 DSH Delivery Panel / DSH 任务交付面板
+
+- DSH 任务页新增交付摘要、Wiki 晋升预览与显式确认入口；浏览 workspace 切换不会改变当前 session 的交付写入目标。
+
+## 4.3.99 Task-Aware Wiki Knowledge / 任务感知 Wiki 知识
+
+- 新增 `/workspace/knowledge-summary`：按当前焦点任务与 scope 对私有 Wiki 反向资产排序，返回关联原因，不读取或复制 Wiki 正文。
+- 新增 `wiki-promotion-preview` 与 `wiki-promotion-confirm`：从已捕获的 DSH 交付摘要生成长期知识预览；确认后调用 Personal Wiki 受控晋升，并登记新 Wiki 的反向资产链接。
+
+## 4.3.98 Personal Wiki Asset Bridge / 个人 Wiki 资产桥接
+
+- 新增 `wiki-assets-sync`：将明确选定的 Personal Assistant Wiki 文档登记为私有 `kind=wiki` 协作资产，只保存 `pawiki:` 来源引用、知识 ID、内容哈希和范围，不复制正文。
+- DSH 的“知识”页读取 workspace 资产并展示关联的个人 Wiki 条目；默认 scope 由 workspace profile 提供。
+
+## 4.3.97 DSH Workbench Landing Performance / DSH 工作台首屏性能
+
+- 新增只读 `/workspace/workbench-summary`：首页只读取焦点任务、活跃/阻塞任务、下一步、近期回执/会话和轻量 health，避免 `workspace_dashboard` 的质量评测与完整恢复聚合。
+- DSH plugin 对该首页投影使用 5 秒本地缓存；任务、影响、记忆、质量等重型数据仍按用户切换标签后才加载。
+
+## 4.3.96 DSH 交付摘要捕获 / DSH Delivery Summary Capture
+
+- 新增 `memory-center dsh-delivery-capture`：将 completion-signalled DSH 最终摘要以独立、已关闭的 L0 会话与写入回执记录；摘要最多 1400 字符，代码块会由插件侧省略，不导入完整 transcript，也不自动生成或发布 L1 Case。
+- 交付捕获按 `source_session_id + turn + step` 去重；带“验证通过 / 测试通过 / 已确认”等信号的摘要仅标记为 captured/recorded evidence，不伪造独立测试执行。
+- Added bounded, idempotent DSH completion-summary capture into closed L0 sessions without importing full transcripts or auto-publishing cases.
+
+## 4.3.95 DSH Memory Center Workbench / DSH 记忆中心工作台
+
+- DSH 独立插件新增 `Memory Center` 会话视图：工作台、任务连续性、影响分析、记忆与质量五个只读子页；原“执行观测”继续保留为当前 DSH 会话诊断页。
+- 插件新增 DSH 同源的本地只读 bridge：按 session cwd 自动发现 workspace，按需启动和复用 loopback Memory Center 查询进程；关闭 DSH 会清理 bridge，不影响 Memory Center 独立 CLI、MCP、HTTP 使用。
+- HTTP 新增只读 `/workspace/impact`、`/workspace/consolidation-candidates`、`/workspace/agent-execution-summary`，供本地工作台复用既有影响、候选与脱敏执行汇总读模型。
+- 影响子页增加基于 `/workspace/evidence-subgraph` 的有界证据图、focus 选择和节点详情；图只展示已导出的图谱关系，并明确标记推断级证据。
+- Added a local DSH workbench view and same-origin read-only bridge, plus read-only HTTP routes for impact, consolidation candidates, and sanitized execution summaries.
+
+## 4.3.94 本地 Agent 执行观测 / Local Agent Execution Observability
+
+- 新增 DSH 脱敏 execution-event inbox 的幂等导入与本地汇总 CLI，关联 turn、step、model、tool、Token、耗时和失败；不复制 prompt、工具参数/结果、cwd 或消息正文。
+- Added idempotent local DSH execution-event ingestion and bounded turn/model/tool/token/failure summaries without retaining prompts, tool payloads, cwd, or message bodies.
+
+## 4.3.93 会话召回精度行动提示 / Session Recall Precision Guidance
+
+- 当私有精度标签发现额外返回项时，`eval-session-recall` 现在优先提示人工审核与补充 allowed 集合；只有确认无关候选过多时才建议收紧 CJK fallback。
+- When precision labels surface extra candidates, session recall evaluation now prioritizes human review and allowed-set refinement before recommending a stricter CJK fallback.
+
+## 4.3.92 会话召回精度审查 / Session Recall Precision Review
+
+- 私有 session-recall case 可选声明 `allowed_source_session_ids`；报告只统计待人工审核的额外返回项，不将其自动判定为误报，并返回有标签 case 的 precision 聚合。
+- Private session-recall cases can optionally declare allowed source sessions; the report surfaces extra returned candidates for human review without auto-labeling false positives.
+
+## 4.3.91 会话召回模式可观测性 / Session Recall Match-Mode Observability
+
+- `eval-session-recall` 新增脱敏 `related_case_match_modes` 聚合与单 case `related_case_match_mode`，区分 existing exact、CJK fallback 与无命中，避免只凭 recall 判断 fallback 质量。
+- Added privacy-safe exact/CJK-fallback/none match-mode telemetry to session recall evaluation so fallback quality is not inferred from recall alone.
+
+## 4.3.90 Resume 中文长意图召回 / CJK Resume Recall
+
+- 当 L1 case 的既有 exact token 匹配为空时，`workspace_resume_context` 仅对中文连续片段启用至少两个二元片段的有界 scored fallback；精确匹配路径保持不变，避免单字泛化噪声。
+- Added a bounded scored CJK-bigram fallback for L1 resume only when legacy exact-token matching is empty; exact matching remains unchanged and one-character noise is avoided.
+
+## 4.3.89 会话召回评测 / Session Recall Evaluation
+
+### 会话召回评测 / Session recall evaluation
+
+- 新增只读 `eval-session-recall`：使用工作区外的私有 YAML case 复放实际 resume 链路，区分 L1 未索引、token 检索遗漏、结果窗口截断和证据不足；输出不回显 query、任务正文或 session ID。
+- Added read-only `eval-session-recall` using private local cases to classify L1 indexing, retrieval, window-selection, and evidence failures without exposing query or session text.
+
+## 4.3.88 会话候选审批闭环 / Session Candidate Approval Loop
+
+- 新增 staged 多会话候选的 append-only 审批闭环：`consolidate-session --stage`、`consolidation-candidates` 与 `decide-consolidation-candidate`。逐条 approve 会在写入 L1 前重新检查 current-truth 冲突；REVIEW 候选只能人工处理或拒绝。
+- 当前会话整合只支持无冲突 `ADD` 与人工 `REVIEW`；L3 仍仅产出草稿，`UPDATE / SUPERSEDE / NOOP` 保持为后续经真实数据验证的候选能力。
+- Added append-only staging and per-item approval for multi-session consolidation. Approval rechecks current-truth conflicts before L1 writes; REVIEW candidates cannot be written automatically. L3 remains draft-only.
+
+### 多会话记忆整合 / Multi-session memory consolidation
+
+- 新增 `consolidate-session` CLI 命令（core: `workspace_consolidate_sessions`）：把一组已结束会话的 `suggest-case` 草稿整合为 L1 case / L3 记忆块候选。
+- 每条候选都带来源 event/evidence ref、冲突理由与预期写操作；既有 current-truth case 或同批重复会话返回 `REVIEW`，不基于文本相似度自动覆盖；已失效 case 不阻止新的 `ADD`。
+- 默认 dry-run 只产出草稿；新增 `--stage`、`consolidation-candidates` 与 `decide-consolidation-candidate`，以 append-only 候选/决策记录支持逐条审批或拒绝；approve 只写入重新校验仍无 current-truth 冲突的 ADD。`--apply` 保留为直接显式模式且不能与 `--stage` 同用；`--include-l3` 额外产出 L3 memory-block 追加草稿（即使 apply 也不自动写入）。
+- 设计依据 `docs/MEMORY_LANDSCAPE_RESEARCH.md` §3.2/§4：显式离线维护、不改变 MCP tool schema、不进入查询热路径。
+
+- Added `consolidate-session` CLI (core `workspace_consolidate_sessions`) that folds multiple finished sessions into L1 case / L3 memory-block candidates with source refs, conflict reasons, and expected write operations. It is dry-run by default; `--stage` persists append-only candidates for per-item approval or rejection, and approval rechecks current-truth conflicts before writing. `--apply` writes only conflict-free ADD candidates, while current cases and batch duplicates require review. L3 drafts are never auto-written.
+
+## 4.3.87 推理 Prompt 与证据闭环 / Reasoning Prompts and Evidence Closure
+
+- 新增 `clarify_change_request`、`audit_project_claim`、`design_minimal_validation`、`compare_change_options` 四个 additive MCP Prompt，分别覆盖逐问式需求澄清、工程断言核查、最小可证伪验证和双向钢人决策。
+- 四个 Prompt 仅编排现有 `mc_*` facade，保持 tool schema 不变；继续遵守 `knowledge_state` / `evidence_level`、预注册 argv profile、真实验证回执和用户接受后再记录决策的边界。
+- Added four additive MCP prompts for bounded clarification, project-claim auditing, falsifiable validation design, and evidence-backed option comparison without changing tool schemas or creating a second state store.
+- 新增 `eval-reasoning-prompts`：内置四类静态合同 smoke，并支持本地 `real_case` 与脱敏人工 observation 生成统一验收报告；公开示例、缺少证据引用或覆盖不完整时不会返回 `release_ready=true`。
+- 推理 Prompt 评测报告不回显参数正文、reviewer 或 evidence refs，只保留逻辑 case ID、聚合检查、渲染长度与 SHA-256；人工身份明确标记为 `self_asserted`。
+- Added a privacy-bounded reasoning-prompt acceptance report that separates static contract smoke from local real behavior observations and never treats public examples as real evidence.
+- `feature_delivery_v2` acceptance 新增兼容字段 `critical_hypothesis`、`continue_if`、`stop_if`、`rollback`、`evidence_required`；delivery matrix、TECH_SPEC、任务指标和恢复提示展示验证设计及覆盖率。
+- 新增默认关闭的 `enforce_validation_design_contract` workspace policy；启用后，必需验收缺少完整可证伪设计会在进入 `locate` 前返回 `validation_design_required`，旧任务和默认流程保持兼容。
+- 验证回执与预注册 profile 新增兼容型 `evidence_types`；delivery matrix、TECH_SPEC、任务指标和恢复提示会计算每项验收的已观测、缺失与闭环证据。新增默认关闭的 `enforce_evidence_contract`，启用后只在 `close` 阶段阻止缺少所需证据类型的任务。
+- CLI、HTTP、MCP 的既有 delivery contract 入口复用同一 additive items 结构，无需修改 MCP tool schema。
+- Added backward-compatible acceptance validation-design fields and an opt-in locate-stage gate without changing the MCP tool schema.
+
+## 4.3.86 图谱正确性与生成式 Wiki 移除 / Graph Correctness and Generated Wiki Removal
+
+- 移除生成式 Wiki 设计及其 L1/L2/L3 项目地图、semantic bridge、profile、manifest、CLI、Hook 和 `mc_admin` 入口；任务恢复不再隐式注入 Wiki L1 上下文。
+- `generate-skills` 迁至独立 `knowledge/skill_generation.py`，不再依赖 Wiki 模块；用户提供文档的协作资产登记能力保持不变。
+- `DISPATCHES_TO` 现在要求父子方法签名一致，并排除 `private` / `static` 方法；Java parser 以 additive `modifiers` 字段保留分派所需证据。Lombok `@Builder` 不再无依据推断默认不存在的 `toBuilder()`。
+- Removed the generated Wiki design and its L1/L2/L3 project maps, semantic bridge, profile, manifest, CLI, Hook, and `mc_admin` entries. Task resume no longer injects Wiki L1 context implicitly.
+- Moved `generate-skills` to the standalone `knowledge/skill_generation.py` module. User-provided document collaboration assets remain unchanged.
+- `DISPATCHES_TO` now requires matching parent/child signatures and excludes `private` and `static` methods. Java parser signatures retain additive `modifiers` evidence, and Lombok `@Builder` no longer implies `toBuilder()` without proof.
+
+## 4.3.85 累积功能与质量更新 / Cumulative Feature and Quality Update
+
+### Java 调用解析：Lombok @Builder 支持 / Java call resolution: Lombok @Builder support
+
+- resolver 新增 Lombok `@Builder` 解析：`X.builder()` 静态工厂解析为 `*_lombok_builder`（0.85）；`X.builder().field(...)` 链式 setter 解析为 `chain_lombok_builder_setter`（0.78），`X.builder().build()` 解析为 `chain_lombok_builder_build`（0.80），均标记 `inferred_target`。
+- 仅当类带 `@Builder` 注解且 setter 名与声明字段一致时推断，无注解类不误报（新增 4 个单元测试覆盖正/负场景）。
+- 真实工作空间验证：未解析率 52.26% → 48.34%；`missing_method_or_polymorphism` 类别数量显著下降。
+- 新增 3 个私有锚点 case（`java-call-resolution-lombok-builder-v4390.yaml`），门禁 3/3 通过（recall 1.0、resolution_level 全命中）。
+
+### Session replay 匹配器校准 / Session replay matcher calibration
+
+- 修复 agent guidance replay 匹配器：补齐 MCP server 已发出的 `inspect_symbol_anchor/inspect_code_hits/inspect_chain_summary/inspect_context_summary/inspect_trace_overview/inspect_route_result` 动作分支，并识别 `mc_*` CLI 工具别名（与 bypass 判定对齐）。
+- 修复前真实工作空间 38 条事件全部误判为 missed（adoption 0.0）；修复后 adoption_rate 0.947，剩余 2 条为真实 `guidance_missing_target_hint` 缺口。
+- `eval-retrieval-replay` 校准保持仅消费带证据的人工验证记录（当前 `insufficient_replay` 为设计内状态，guidance adoption 不作为权重学习证据）。
+
+### 向量检索默认开启评估（真实基线对比）/ Vector default-on evaluation against real baseline
+
+- 真实工作区完成 dense 向量链路验证：`sentence-transformers`（all-MiniLM-L6-v2）selective scope 构建 embeddings；安装 `semantic-ann` 可选依赖（hnswlib）后 `vector_ann_rebuild` + `vector_ann_tune` 就绪（self_recall 1.0，ANN 查询 p95 0.12ms）。
+- 对比结论（retrieval-quality 私有套件，sparse 基线 5/5 通过）：vector-on 下 config 语义查询保持 recall 1.0（延迟 188→440ms），但 MQ 契约查询 anchor recall 1.0 → 0.0——向量泛化匹配把大量 Consumer 方法推入前排，稀释契约锚点。
+- 决策：**维持 `enable_vector=False` 默认**（MCP/CLI 行为不变）。默认开启的前置条件：带证据人工验证样本完成融合权重校准（当前 `insufficient_replay`），使契约类锚点在 vector-on 下不掉出 top-N。
+
+### P3 交付闭环收尾 / Delivery loop wrap-up
+
+- `propose_delivery_breakdown` 增强：检查索引新鲜度，stale 时标记歧义并建议定向刷新。
+- Waiver 运行时管理：`create/approve/revoke/list_delivery_waiver`，门禁检查生效 waiver 并区分 `transitioned/waived_transition/forced_transition`。
+- 失败四类显式分类：`classify_delivery_failure`（auto_repairable / environment_blocked / requirement_path_error / human_decision_required）。
+- 任务级效果度量：`delivery_task_metrics`（需求覆盖率、验收覆盖率、验证成功率、门禁强制率）。
+- `task_resume_check` 消费 delivery-matrix，提取未决歧义与失败验证并给出下一步建议。
+
+### 项目地图三层上下文与语义桥 / Three-level project map and semantic bridge
+
+> 历史说明：本节记录 4.3.85 当时引入的能力；整套生成式 Wiki 设计已在 4.3.86 移除。
+
+- `generate-wiki` 升级为三层项目地图：L1 总览（始终重建、有界）、L2 模块地图（按 dirty path 增量）、L3 语义桥（接口契约/消息契约/配置键/自定义术语 → 代码实体）。
+- manifest 引入 generation 追踪与 stale 标记；`wiki-status` 报告过期模块。
+- 新增 `mark_wiki_modules_stale`（脏路径→受影响模块，支持嵌套路径与绝对路径段匹配）。
+- 新增 workspace wiki profile：`update_wiki_profile` 支持自定义语义桥规则与业务术语映射。
+- 新增只读上下文入口：`get_l1_context` / `get_l2_context` / `get_l3_bridge`，CLI 命令 `wiki-status`、`wiki-context`，admin action `wiki_status`、`wiki_context`、`wiki_mark_stale`、`wiki_profile_update`。
+- `task_resume_check` 集成 L1 作为默认轻量上下文（失败时降级，不影响恢复判断）。
+- 真实工作空间验证：36 模块、702 条语义桥；增量刷新只更新受影响模块。
+
+### 文档进一步精简 / Docs further consolidation
+
+- 将 `PRODUCT_TECHNICAL_OVERVIEW.md` 的核心内容整合入 ARCHITECTURE 新增附录：
+  - 附录 C：产品定位与核心问题（一句话介绍、五类真实问题、核心思想）
+  - 附录 D：技术选型理由（SQLite、混合检索、generation、部分成功、不训练权重）
+  - 附录 E：用户可感知能力（日常定位、影响分析、长任务、新鲜度、质量治理）
+  - 附录 F：性能设计原则（热路径规则、风险处理策略表）
+  - 附录 I：常见问题（8 个 FAQ）
+- 将 `SPECIAL_NOTES.md` 的关键设计决策整合入 ARCHITECTURE 附录 H（10 条常见设计误解）。
+- 将 `SPECS.md` 合并入 `REFERENCE.md` §6（schema、workspace、规则、hooks、记忆目录、Bridge 策略、兼容性）。
+- 将 `ONTOLOGY_EVOLUTION_PLAN.md` 合并入 `ONTOLOGY.md` Part II（演进目标、设计原则、目标本体、交付里程碑、非目标）。
+- 将 `RELEASE.md` 合并入 `DOCUMENT_CONSTITUTION.md`（发布原则、最小清单、对外说明重点）。
+- 将 `docs/README.md` 合并入根 `README.md` 文档导航。
+- 归档 `PRODUCT_TECHNICAL_OVERVIEW.md`、`SPECIAL_NOTES.md`、`EXTERNAL_ABSORPTION_ISSUES.md`、`SPECS.md`、`ONTOLOGY_EVOLUTION_PLAN.md`、`RELEASE.md`、`docs/README.md`。
+- 活跃文档从 12 份降至 8 份；ARCHITECTURE 从 990 行增至 1150 行，内容完整。
+- 同步更新所有活跃文档中对已归档文档的引用。
+
+### 文档合并与同步更新 / Docs consolidation and sync update
+
+- 将 `TECHNICAL_ARCHITECTURE_AND_EVOLUTION.md` 和 `TECHNICAL_GUIDE.md` 的独有内容合并入 `ARCHITECTURE.md` 附录 A（设计决策与选型）和附录 B（代码导航与主链路）；原文件归档至 `docs/archive/`。
+- 将 `DOCS_STATUS.md` 合并入 `DOCUMENT_CONSTITUTION.md`（新增 active/historical 文档分类、更新规则和推荐阅读顺序）；原文件归档。
+- 删除 `UNIFIED_BACKEND_READ_PATHS.md`（已被 ARCHITECTURE §6 完整覆盖）；原文件归档。
+- 更新 ARCHITECTURE §8 编排层模块表，反映 ADR-0002 拆分后的新模块（`ranking.py`、`session_payloads.py`、`rules.py`、`symbol_ranking.py`、`guidance.py`、`contract_filter.py`）。
+- 更新 ARCHITECTURE §9.2 CLI 章节，反映 155 个命令拆至 16 个 `cli/commands/<family>.py` 家族模块。
+- 更新内部开发路线文档，补充 ADR-0002 内部重构为已交付。
+- 同步更新 README、USER_GUIDE、SPECIAL_NOTES、PRODUCT_TECHNICAL_OVERVIEW 中对已归档文档的引用。
+
+### 按 ADR-0002 拆分 cli/main.py 命令族 / Split cli/main.py command families per ADR-0002
+
+- 将 155 个根 `app` 命令按业务域拆至 16 个 `cli/commands/<family>.py` 模块（setup/retrieval/ops/watcher/change/lookup/walkthrough/write/eval/gate/session/resume/work/audit/bridge/tooling），每个模块提供 `register_<family>_commands(app)` 保持命令名与路径不变；`main.py` 从 2892 行降至约 220 行，只保留根装配。
+- 11 个共享 typer.Option 单例拆至 `cli/commands/_options.py`；`_dispatch_walkthrough_cli` 随 walkthrough 族、`_parse_event_payload` 随 session 族迁移；跨族依赖（work 族用 `_parse_event_payload`）以显式 import 处理。
+- 更新 3 个测试文件的 monkeypatch 目标（`cli.main.X` → `cli.commands.setup.X` / `cli.commands.lookup.X`）与后端函数共享断言（改为聚合 `cli.main` + 全部命令族源码）；`python -m memory_center.cli.main` 与 `watcher-run` 子进程入口保持不变。
+- 全量测试通过，CLI 行为零变更（155 根命令 + 4 子组的命令名与调用路径与迁移前完全一致；唯一差异：`--help` 中命令的列出顺序按命令族重组）。
+
+### Split cli/main.py command families per ADR-0002
+
+- Moved all 155 root-`app` commands into 16 `cli/commands/<family>.py` modules (setup/retrieval/ops/watcher/change/lookup/walkthrough/write/eval/gate/session/resume/work/audit/bridge/tooling), each exposing `register_<family>_commands(app)` with command names and paths unchanged; `main.py` drops from 2892 to ~220 lines of pure root assembly.
+- Moved the 11 shared `typer.Option` singletons to `cli/commands/_options.py`; `_dispatch_walkthrough_cli` travels with the walkthrough family and `_parse_event_payload` with the session family; cross-family use (work uses `_parse_event_payload`) is an explicit import.
+- Updated monkeypatch targets in 3 test files (`cli.main.X` → `cli.commands.setup.X` / `cli.commands.lookup.X`) and the backend-function-sharing assertion (now aggregates `cli.main` plus every command-family module); `python -m memory_center.cli.main` and the `watcher-run` subprocess entry point are unchanged.
+- Full suite passing; zero CLI behavior change (command names and invocation paths for the 155 root commands + 4 sub-groups are identical to before; the only difference: the order commands are listed in `--help` is regrouped by command family).
+
+### 按 ADR-0002 拆分 shared.py / Split shared.py per ADR-0002
+
+- 将排序/文本原语（7 个函数）拆至 `core/orchestrator/ranking.py`，会话事件载荷压缩与 ref 摘要（12 个符号）拆至 `core/orchestrator/session_payloads.py`，规则加载（7 个函数）拆至 `core/orchestrator/rules.py`；`shared.py` 从 1036 行降至 628 行。
+- 删除 phase-A 后已零消费者的 shared 版 `_project_matches`（保留 query 版在 symbol_ranking）。
+- 依赖单向化：shared 回导 `_event_payload` / `_classify_case_evidence_ref` / `_load_auto_sync_rules` / `_summarize_ref`，无循环 import；12 个 importer 的 import 语句同步更新。
+- 全量测试通过，行为零变更。
+
+### Split shared.py per ADR-0002
+
+- Moved ranking/text primitives (7 functions) to `core/orchestrator/ranking.py`, session-event payload compaction and ref summarization (12 symbols) to `core/orchestrator/session_payloads.py`, and rule loading (7 functions) to `core/orchestrator/rules.py`; `shared.py` drops from 1036 to 628 lines.
+- Deleted the shared.py copy of `_project_matches` that had zero consumers after phase A (the query.py copy lives in symbol_ranking).
+- Dependencies are one-directional: shared back-imports `_event_payload` / `_classify_case_evidence_ref` / `_load_auto_sync_rules` / `_summarize_ref` with no import cycles; all 12 importers updated.
+- Full suite passing, zero behavior change.
+
+### 按 ADR-0002 拆分 query.py 辅助簇 / Split query.py helper clusters per ADR-0002
+
+- 将符号排序簇（11 个函数 + `_normalize_symbol_name`）拆至 `core/orchestrator/symbol_ranking.py`，agent 下一步建议簇（9 个函数）拆至 `core/orchestrator/guidance.py`，契约过滤簇（3 个函数）拆至 `core/orchestrator/contract_filter.py`；`query.py` 从 2715 行降至 2057 行，只保留公共查询编排。
+- 发现并记录 `_project_matches` 双实现分叉：query.py 版含连字符查询匹配（'open-api' 匹配 'open_api'），shared.py 旧版没有；本次以 query.py 版为准移入 symbol_ranking，shared.py 版暂不动，待后续统一。
+- 5 个测试文件的私有 helper import 改为指向新模块真实位置；行为零变更，全量测试通过。
+
+### Split query.py helper clusters per ADR-0002
+
+- Moved the symbol-ranking cluster (11 functions plus `_normalize_symbol_name`) into `core/orchestrator/symbol_ranking.py`, the agent next-steps cluster (9 functions) into `core/orchestrator/guidance.py`, and the contract-filter cluster (3 functions) into `core/orchestrator/contract_filter.py`; `query.py` drops from 2715 to 2057 lines and keeps only public query orchestration.
+- Discovered and documented a `_project_matches` divergence: the query.py copy supports hyphenated query matching ('open-api' matching 'open_api') while the older shared.py copy does not; this change standardizes on the query.py copy in symbol_ranking and leaves the shared.py copy for a later consolidation.
+- Five test files now import the private helpers from their new homes; zero behavior change, full suite passing.
+
+### 移除 core/views 图谱视图模块 / Remove core/views graph view module
+
+- 删除无任何生产调用方的 `core/views/builder.py`（`GraphView` / `GraphViewBuilder`）；能力面已被 `mc_onboard` / `mc_domain` / `mc_context_pack` 覆盖，详见 ADR-0003。
+- 同步移除 3 个回归测试文件中仅测试该模块的测试类与 pipeline 中的 view building 步骤；其余测试保持不变。
+
+### Remove core/views graph view module
+
+- Removed `core/views/builder.py` (`GraphView` / `GraphViewBuilder`) which had zero production consumers; the capability is already covered by `mc_onboard` / `mc_domain` / `mc_context_pack`. See ADR-0003.
+- Removed the test classes that only exercised this module across three regression test files plus the view-building step inside the V3 pipeline test; all other tests are unchanged.
+
+### 清理 query.py 死转发 / Remove dead walkthrough forwarding shims
+
+- 删除 `core/orchestrator/query.py` 中 59 个仅委托 `core/walkthrough/*` 且无任何调用者的私有转发函数，文件从 2944 行降至 2715 行；纯删除、零行为变更。同步移除失效的 `_wt_continuations` / `_wt_risks` / `_wt_symbols` 别名 import。
+- `tests/entrypoints/test_mcp_facades.py` 的两个 walkthrough 风险辅助函数改为直接从真实实现 `core/walkthrough/risks.py` 导入，测试语义不变且更贴近真实接缝。
+- 保留 3 个仍有内部调用者的薄适配：`_compact_method_walkthrough_result`、`_render_method_walkthrough_answer`、`_walkthrough_index_signature`。
+
+### Remove dead walkthrough forwarding shims in query.py
+
+- Removed 59 private forwarding functions in `core/orchestrator/query.py` that only delegated to `core/walkthrough/*` with zero callers anywhere; the file drops from 2944 to 2715 lines as a pure, behavior-preserving deletion, along with the now-unused `_wt_continuations` / `_wt_risks` / `_wt_symbols` alias imports.
+- The two walkthrough risk helpers referenced by `tests/entrypoints/test_mcp_facades.py` now import directly from their real implementation in `core/walkthrough/risks.py`; test semantics are unchanged and sit closer to the real seam.
+- Kept the 3 thin adapters that still have internal callers: `_compact_method_walkthrough_result`, `_render_method_walkthrough_answer`, `_walkthrough_index_signature`.
+
+## 4.3.84 局部 Generation 流式发布 / Scoped Generation Streaming Publication
+
+- 局部 generation 不再递归复制上一代完整目录，只按当前 manifest 硬链接未受影响服务的 JSON 与 SQLite 分片；受影响分片保持新 inode，旧 generation 仍不可变且可回滚。
+- 项目图导出从 `project_subgraph()` 的 Python 全量物化、JSON 反序列化和二次序列化，改为 SQLite `ATTACH + INSERT SELECT` 流式导出。临时可重建数据库先装载数据，再批量创建二级索引和 FTS，最后原子替换。
+- 2-3 个受影响项目使用最多 3 个有界 worker 并行构建独立分片；全量 reindex 继续串行，避免大工作区形成无界 I/O 峰值。
+- 新增继承、服务 payload、图分片和共享分片四段耗时；增加禁止 Python 图物化、双项目并行、节点/边无损对比、索引存在性和 inode 隔离测试。
+- 同一真实 3 文件负载连续两次完成于 `8.23s` 和 `8.21s`，较 `10.63s` 基线下降约 `22.6%`；generation 发布从 `4.99s` 降至约 `3.5s`，恢复到 `10s` 健康预算。4.3.81-4.3.83 三套严格 Java 门禁保持全部通过。
+
+## 4.3.84 Scoped Generation Streaming Publication
+
+- Partial generations no longer copy the complete parent directory recursively. Only JSON and SQLite artifacts for unchanged services are hard-linked from the current manifest; rebuilt shards receive new inodes while retained generations remain immutable and rollback-safe.
+- Project graph export now uses SQLite `ATTACH + INSERT SELECT` instead of materializing the complete project subgraph in Python and decoding/re-encoding every metadata payload. Rebuildable temporary databases load data before secondary indexes and FTS are created, then publish through an atomic replace.
+- Two or three affected projects use at most three bounded workers to build independent shards. Full reindex remains sequential to avoid unbounded I/O bursts on large workspaces.
+- Added stage timings for inheritance, service payloads, graph shards, and shared shards, plus regression tests for zero Python graph materialization, two-project parallelism, lossless node/edge counts, query indexes, and inode isolation.
+- The same real three-file workload completed twice at `8.23s` and `8.21s`, about `22.6%` below the `10.63s` baseline. Generation publication dropped from `4.99s` to about `3.5s`, restoring the `10s` healthy budget; all strict Java suites from 4.3.81 through 4.3.83 remain passing.
+
+## 4.3.83 JDK 集合泛型 Lambda 推导 / JDK Collection Generic Lambda Inference
+
+- Java regex supplement 可从方法参数、局部变量和显式可见字段的 `List<T>`、`Set<T>`、`Collection<T>`、`Iterable<T>`、`Stream<T>` 中推导直接集合/Stream 操作的 Lambda 输入类型，并支持 `Map<K,V>.forEach((k,v) -> ...)`。
+- 嵌套调用改为重叠扫描，`items.forEach(item -> item.submit())` 不再因外层调用吞掉内层接收者调用。类型证据仍限制在对应 Lambda 词法区间内。
+- 通配符、裸集合、类型变量、第三方回调及经过类型变换 `map/flatMap` 后的后续 Lambda 保持 unresolved；不跨越无法证明的泛型变换传播类型。
+- 新增集合字段/参数/局部变量、Map 双参数、类型变换隔离和通配符负例。真实空间 3 个新增私有 case、上一版 Lambda case 和重载 case 均严格 3/3 通过，意外与禁止高置信边均为 `0`。
+- 真实空间单文件刷新 `4.96s`，在 `10s` 预算内；3 文件批量刷新 `10.63s`，其中 generation 发布 `4.99s` 并触发 warning。下一性能优先级是批量 generation 的受影响分片 copy-on-write 发布。
+
+## 4.3.83 JDK Collection Generic Lambda Inference
+
+- Java regex supplements now infer direct collection/Stream Lambda inputs from `List<T>`, `Set<T>`, `Collection<T>`, `Iterable<T>`, and `Stream<T>` method parameters, locals, and explicitly visible fields. `Map<K,V>.forEach((k,v) -> ...)` is supported as well.
+- Qualified calls are scanned with overlap, so an outer `items.forEach(...)` no longer hides an inner `item.submit()` call. Inferred evidence remains bounded to the matching Lambda scope.
+- Wildcards, raw collections, type variables, third-party callbacks, and downstream Lambdas after type-changing `map/flatMap` operations remain unresolved. Types never propagate across an unproven generic transformation.
+- Added positive and negative coverage for collection fields/parameters/locals, bi-arity maps, transformation isolation, and wildcards. Three new private real-workspace cases, the previous Lambda suite, and the overload suite all pass strict 3/3 gates with zero unexpected or forbidden high-confidence edges.
+- A real single-file refresh completed in `4.96s` within the `10s` budget. A three-file batch took `10.63s`, including `4.99s` in generation publication, and remains a warning; affected-shard copy-on-write publication is the next performance priority.
+
+## 4.3.82 Java Lambda 词法类型推导 / Java Lambda Lexical Type Inference
+
+- Java regex supplement 新增 Lambda 词法作用域：显式 `(Type value) -> ...` 参数类型仅作用于对应块或表达式，不会污染同名字段及 Lambda 外代码。
+- 支持标准 `java.util.function` 的 `Consumer`、`Function`、`Predicate`、双参数和 Operator 泛型输入映射；第三方无类型回调和仅凭 `Type.class` 的回调保持 unresolved，不猜测调用契约。
+- 新增显式 Lambda、标准函数接口、同名字段隔离和第三方回调负例测试。真实空间 3 个私有 case 严格门禁全部通过，召回、置信率和解析等级均为 `1.0`，意外与禁止高置信边均为 `0`；上一版重载门禁保持 3/3 通过。
+- 3 个大文件合并刷新为 `11.42s`，明确标记 warning；其中最重单文件刷新为 `7.77s` 并通过 `10s` 预算。批量大文件 generation 发布继续作为性能观察项，不把合并超预算表述为已解决。
+
+## 4.3.82 Java Lambda Lexical Type Inference
+
+- Added lexical Lambda scopes to Java regex supplements. Explicit `(Type value) -> ...` parameter types apply only to the matching block or expression and cannot leak into same-named fields or code outside the Lambda.
+- Added generic input mapping for standard `java.util.function` consumers, functions, predicates, bi-arity interfaces, and operators. Untyped third-party callbacks and callbacks inferred only from a `Type.class` argument remain unresolved because their contracts are not proven.
+- Added explicit-Lambda, standard-functional-interface, field-isolation, and third-party negative tests. Three private real-workspace cases pass strict recall, confidence, and resolution-level gates at `1.0`, with zero unexpected or forbidden high-confidence edges; the previous overload suite remains 3/3 passing.
+- A combined refresh of three large files took `11.42s` and remains a warning. The largest file alone refreshed in `7.77s`, passing the `10s` budget; large-batch generation publication remains an explicit performance observation rather than a claimed fix.
+
+## 4.3.81 Java 重载作用域隔离 / Java Overload Scope Isolation
+
+- 修复 Java regex supplement 将同名重载方法的参数与局部变量表按方法名相互覆盖的问题。每条调用和 DTO 字段访问现在直接绑定所在重载的变量作用域，不再从其他重载猜测接收者类型。
+- 兼容的 `method_variable_types` 聚合视图改为保守合并：同名变量在不同重载中类型冲突时删除该歧义项；解析器仍保留每条调用上的确定类型证据。
+- 新增重载调用与 DTO accessor 回归测试，并在真实工作区建立 3 个私有 expected/allowed/forbidden 逻辑锚点。3 文件局部刷新耗时 `6.70s`，严格门禁 3/3 通过，召回率与高置信命中率均为 `1.0`，禁止目标命中为 `0`。
+
+## 4.3.81 Java Overload Scope Isolation
+
+- Fixed Java regex supplements leaking parameter and local-variable types across same-named overloads. Each call and DTO field access now binds directly to the lexical scope of its own overload instead of borrowing a sibling overload's receiver type.
+- The compatible `method_variable_types` aggregate is now conservative: a variable with conflicting types across overloads is removed as ambiguous, while deterministic type evidence remains attached to each call.
+- Added overload call and DTO-accessor regression coverage plus three private expected/allowed/forbidden anchors on a real workspace. A three-file scoped refresh completed in `6.70s`; all 3 strict cases passed with `1.0` recall and confidence rate and zero forbidden hits.
+
+## 4.3.80 时间前向共变与 Replay 校准 / Walk-Forward Co-change and Replay Calibration
+
+- Git co-change v3 按仓库提交时间从旧到新执行：每个评估提交只能读取更早提交形成的文件对，当前图仅作为诊断对照，不参与校准，消除未来提交与当前图快照泄漏。
+- 新增过去热门文件基线和应用门禁；至少 5 个评估提交、20 个 case，且 Precision/Recall 均不低于基线时，才允许 CLI `--apply` 或 MCP `force=true` 写入共变先验。
+- 共变先验只保存 24 位路径哈希、支持度和归一化分数；查询只对现有图候选增加最多 0.12 的有界排序增益，不引入无图证据文件。真实工作区应用共变先验，100 次候选排序平均增加后的总耗时约 `0.266ms/次`。
+- 检索 replay 按任务或证据指纹去重，按时间切分训练集和后 25% 留出集；提案只使用更早样本，只有留出集 Brier score 不退化且训练/验证样本门槛满足时才允许应用。
+- 真实共变 66 个 walk-forward case 上 Precision `0.2284`、Recall `0.4539`，高于过去热门文件基线 `0.1742 / 0.4261`；真实检索 replay 当前为 0 条验证样本，因此保持 `insufficient_replay`，未写入权重。
+
+## 4.3.80 Walk-Forward Co-change and Replay Calibration
+
+- Git co-change v3 evaluates commits from oldest to newest. Each evaluation commit can use only older file pairs; the current graph is diagnostic-only and excluded from calibration, preventing future-commit and current-snapshot leakage.
+- Added a past-only popularity baseline and an application gate. Hashed priors can be applied only with at least five evaluated commits, twenty cases, and non-regressing precision and recall.
+- Persisted priors contain only 24-character path hashes, support, and normalized scores. They add at most a bounded 0.12 ranking boost to existing graph candidates and never introduce files without graph evidence.
+- Retrieval replay now deduplicates by task or evidence fingerprint, then uses a chronological training split plus a final 25% holdout. A proposal is applicable only when holdout Brier score does not regress and both training and validation sample requirements pass.
+- Across 66 real walk-forward cases, precision reached `0.2284` and recall `0.4539`, above the past-only popularity baseline of `0.1742 / 0.4261`. The real retrieval replay currently has zero verified samples, so no weight was applied.
+
+## 4.3.79 局部刷新性能治理 / Scoped Refresh Performance Governance
+
+- 局部刷新在同一 `WorkspaceStore` 事务内复用大型运行时索引对象，并使用 SQLite `updated_at` 轻量校验跨实例新鲜度；避免重复解码 Java 符号索引，同时不会让长期 Store 读取旧 generation。
+- 精确文件/目录 scope 直接定位源码，不再先遍历完整服务目录；多语言结构 pass 复用相同有界 walker，无法解析的 scope 才保持保守回退。
+- reindex 新增 `timing_ms`，覆盖索引载入、scope 扫描、解析合并、索引持久化、图更新、语义、检索、generation 发布和断言投影。局部刷新仅持久化 generation、数量和聚合耗时，不记录路径或源码。
+- 新增 `scoped-refresh-performance` CLI、`/workspace/scoped-refresh-performance` HTTP、`mc_admin(action="scoped_refresh_performance")` MCP admin，并接入只读 `runtime-governance`。
+- 真实单文件刷新由 `12.58s` 降至 `5.81s`，下降约 `53.8%`；scope 扫描由 `1.65s` 降至约 `1.71ms`，默认 `10s` 预算通过。
+
+## 4.3.79 Scoped Refresh Performance Governance
+
+- Reused large runtime-index objects within one `WorkspaceStore` transaction while validating cross-instance freshness through the SQLite `updated_at` token. This removes repeated Java-symbol decoding without serving a stale generation from a long-lived store.
+- Exact file and directory scopes now resolve directly instead of walking an entire service tree. The multi-language structural pass shares the same bounded walker and retains conservative fallback semantics for unresolvable scopes.
+- Reindex responses now expose stage-level `timing_ms` for index loading, scoped scanning, parsing/merge, index persistence, graph, semantic and retrieval updates, generation publication, and assertion projection. Persisted refresh observations contain only generation, counts, and aggregate timings.
+- Added CLI, HTTP, and MCP-admin scoped-refresh performance status and integrated it into read-only runtime governance.
+- A real one-file refresh improved from `12.58s` to `5.81s` (about `53.8%`), with scoped scanning reduced from `1.65s` to roughly `1.71ms`, passing the default `10s` budget.
+
+## 4.3.78 Java 调用分类与共变排序 / Java Call Classification and Co-change Ranking
+
+- Java 结构事实新增 `type_kinds`，保留 `class / interface / enum / record / annotation`，并写入 Class 节点；手写 `JavaSymbol.to_dict()` 同步输出该字段，避免高性能序列化路径丢失新事实。
+- resolver 新增 `generated_enum_method_out_of_scope`、`chain_return_type_not_indexed`，并递归识别“本地父接口继续继承外部框架接口”的方法。Enum 编译器方法、外部集合链式方法、MyBatis 继承方法不再污染本地多态修复 campaign，也不会生成猜测边。
+- 真实工作区建立 3 个私有链式逻辑锚点并定向刷新 14 个相关文件；edge recall、置信率、resolution-level rate 均为 `1.0`，unexpected/forbidden 高置信边均为 `0`。
+- co-change 文件候选从无序 `DISTINCT LIMIT` 升级为有界边投影上的确定性加权排序，默认候选从 24 收敛为 8。真实工作区 66 个 case 上 Precision 从 `0.0438` 提升到 `0.0706`，Recall 从 `0.2191` 提升到 `0.2229`，评测约 `37ms`。
+- 大图原型曾使用全量 SQL 聚合，但真实大图超过 30 秒，已移除；正式实现最多读取 1600 条邻接边后在内存聚合，不扫描完整文件子图。
+
+## 4.3.78 Java Call Classification and Co-change Ranking
+
+- Added `type_kinds` to Java structural facts and Class-node metadata, preserving class, interface, enum, record, and annotation semantics through the optimized `JavaSymbol.to_dict()` path.
+- Added explicit unresolved reasons for generated enum methods and external chain return types, plus cycle-safe recursive detection of local parents that ultimately inherit external framework APIs. These calls no longer pollute local polymorphism campaigns or create guessed edges.
+- Added three private real-workspace chain anchors and refreshed only 14 related files. Edge recall, confidence rate, and resolution-level rate are all `1.0`, with zero unexpected or forbidden high-confidence edges.
+- Replaced unordered co-change file candidates with deterministic weighted ranking over a bounded edge projection and reduced the default candidate set from 24 to 8. Across 66 real-workspace cases, precision improved from `0.0438` to `0.0706`, recall from `0.2191` to `0.2229`, with evaluation around `37ms`.
+- Removed a full SQL aggregation prototype after it exceeded 30 seconds on a real large graph. The shipped path reads at most 1,600 adjacent edges and aggregates only that bounded slice.
+
+## 4.3.77 图感知变更审查闭环 / Graph-Aware Change Review
+
+- 新增有界加权最佳路径影响传播，按关系权重、边置信度、证据强度、新鲜度和深度衰减计算影响分数；SQLite frontier 逐层查询且每个节点只保留最佳路径，不在查询热路径物化全图。
+- 新增统一 `change-review` 应用服务及 CLI、HTTP、MCP admin 入口。它一次完成变更识别、最多 12 个相关文件的定向刷新、影响链、契约风险、测试缺口和验证 Action；禁止自动退化为全量 reindex。
+- 新增 `minimal -> standard -> deep` 渐进上下文、调用次数/输出/耗时预算、generation-aware 指纹缓存与重复调用停止条件，Agent 协议默认使用最小结果并复用等价审查。
+- `architecture-communities` 升级为显式离线架构健康分析：可选固定种子的 Leiden 社区发现，缺少 `igraph` 时使用确定性加权标签传播；同时返回有界 Brandes 桥接点、异常跨社区连接和未测试高中心性节点。所有异常均标记为 `INFERRED`。
+- 新增 Git co-change 独立评测和 `release-gate --cochange-commits`。同一提交中除种子外的文件作为真值，执行错误独立记为 `environment_error`，报告只保存哈希引用和聚合指标，不保存路径、提交消息或源码。
+- 真实多仓库变更检测由每仓库最多四次串行 Git 调用改为单次 `name-status` 解析与最多 8 路有界并发；图证据定位从逐文件模糊检索改为 `file_path` 索引批量查询。真实工作区只读测量由约 9.6 秒降至约 0.18 秒，完整 minimal Change Review 约 0.22 秒。
+
+## 4.3.77 Graph-Aware Change Review
+
+- Added bounded weighted best-path impact propagation using relation weight, edge confidence, evidence strength, freshness, and depth decay. SQLite frontier expansion keeps one best path per node and never materializes the full graph on the query hot path.
+- Added a unified `change-review` application service across CLI, HTTP, and MCP admin. It combines change detection, scoped refresh of at most 12 relevant files, impact paths, contract risks, test gaps, and verification actions without falling back to a full reindex.
+- Added progressive `minimal -> standard -> deep` context, invocation/output/time budgets, generation-aware fingerprint caching, and duplicate-call stop conditions. Generated Agent guidance now starts with the minimal review and reuses equivalent results.
+- Upgraded `architecture-communities` to explicit offline architecture-health analysis with seeded Leiden when optional `igraph` is installed and deterministic weighted label propagation otherwise, plus bounded Brandes bridges, surprising cross-community links, and untested central hotspots. Findings remain `INFERRED`.
+- Added independent Git co-change evaluation and `release-gate --cochange-commits`. Same-commit files excluding the seed form the ground truth; execution failures are isolated as `environment_error`, and only hashed references and aggregate metrics are retained.
+- Reworked multi-repository change detection from up to four serial Git calls per repository to one `name-status` parse per scope with at most eight workers. Graph evidence now uses indexed batched `file_path` lookup instead of per-file fuzzy search. A read-only real-workspace measurement dropped from about 9.6 seconds to 0.18 seconds, with the complete minimal Change Review around 0.22 seconds.
+
+## 4.3.76 MCP 装载状态防误判 / MCP Loading-State Diagnostics
+
+- Agent 协议将 MCP 状态改为三态：已发现、装载中或未知、已确认不可用。首轮工具快照缺少 `mc_*` 时先延迟发现并调用 `mc_freshness`，配置 enabled 但会话未注入工具时明确提示刷新会话，不再误报“未加载”或“不可用”。
+- 生成的 Memory Center MCP 绑定新增 30 秒启动预算；`runtime-audit` 会把该字段纳入一致性检查。示例 Agent 指令、MCP 指南和用户指南同步更新。
+
+## 4.3.76 MCP Loading-State Diagnostics
+
+- Agent instructions now model MCP availability as three states: discovered, loading or unknown, and confirmed unavailable. A missing `mc_*` entry in the initial tool snapshot triggers lazy discovery and an `mc_freshness` probe; an enabled binding without session tools now asks for a session refresh instead of falsely reporting the server as unloaded or unavailable.
+- Generated Memory Center MCP bindings now include a 30-second startup budget, and `runtime-audit` validates it. Example agent instructions and MCP/user guides have been updated.
+
+## 4.3.75 交付读模型一致性与有界查询 / Delivery Projection Consistency and Bounded Queries
+
+- 回执惰性同步改为锁内快照，并登记读取前的尺寸与 mtime；并发追加不再被错误标记为已同步，下一次读取会自动补齐。旧读模型通过 `projection_version` 惰性升级，JSONL 回填在单个 SQLite 事务中按 500 条分批消费。
+- 新增验收项与证据引用稀疏关系索引。状态和关闭门禁直接查询可信验收覆盖，不再加载、传输和反序列化全部可信回执；早期阶段也不再执行无关回执查询。
+- JSONL 尾读会丢弃任意字节起点产生的不完整首行，合法中文 UTF-8 不再误报损坏。新旧 replay 在按 `contract_sha256` 和 `activation_id` 过滤后才应用数量上限，旧数据不会挤掉当前发布证据。
+- 内部幂等初始化不再重复更新任务活动时间；新增并发水位、多字节尾读、混合 replay、有界查询、流式回填和旧 schema 升级回归测试。
+
+## 4.3.75 Delivery Projection Consistency and Bounded Queries
+
+- Receipt lazy synchronization now uses a locked snapshot and records the size and mtime observed before reading. Concurrent appends can no longer be marked as already synchronized and are repaired on the next read. Existing projections upgrade lazily through `projection_version`, with JSONL consumed in 500-row batches inside one SQLite transaction.
+- Added sparse acceptance and evidence-reference indexes. Status and close gates query trusted acceptance coverage directly instead of loading, transferring, and decoding every trusted receipt; early stages no longer issue unrelated receipt queries.
+- JSONL tail reads discard an incomplete first line created by an arbitrary byte offset, preserving valid multibyte UTF-8. Mixed replay sources are filtered by `contract_sha256` and `activation_id` before limits are applied, so legacy rows cannot evict current publication evidence.
+- Internal idempotent initialization no longer writes task activity twice. Regression coverage now includes synchronization races, multibyte tails, mixed replays, bounded queries, streaming backfill, and old-schema upgrades.
+
+## 4.3.74 可信回执与增量读模型 / Trusted Receipts and Incremental Read Model
+
+- 修复外部回执伪造成 `manual_verified` 的可信漏洞：解析同时校验状态、证据种类、原始引用归属和执行器证据文件。系统规范引用始终优先保留，不会被 50 条用户引用截断。
+- 验证回执 JSONL 继续作为审计源，统一 `graph.db` 新增轻量 `delivery_receipts` 查询读模型。旧 JSONL 首次访问时按任务惰性回填，后续用尺寸和 mtime 增量同步；任务 history 固定保留最近 200 条，千条连续写入不再反复扫描全部历史。
+- `manual_verified` 保存 `reported_actor`、`actor_source` 与 `identity_assurance=self_asserted`，明确区分调用方声明和认证身份。字符串数组拒绝对象或嵌套数组；损坏 JSON/JSONL 中断操作并保留原文件。
+- replay 改为 observation 内的派生投影，一次原子追加同时保存观测事实和脱敏 replay；旧 replay 文件仍可读取，但新观测不再依赖第二次文件写入。
+
+## 4.3.74 Trusted Receipts and Incremental Read Model
+
+- Fixed a trust bug that allowed external receipts to masquerade as `manual_verified`. Resolution now checks status, evidence kind, original reference ownership, and executor evidence files. The canonical reference is reserved ahead of user references and cannot be truncated at the 50-reference boundary.
+- Receipt JSONL remains the audit source while the unified `graph.db` gains a lightweight `delivery_receipts` query model. Existing JSONL is lazily backfilled per task and then synchronized by size and mtime. Task history retains the latest 200 entries, avoiding repeated full-history scans during long write sequences.
+- `manual_verified` stores `reported_actor`, `actor_source`, and `identity_assurance=self_asserted`, distinguishing caller claims from authenticated identity. String arrays reject objects and nested arrays; corrupt JSON or JSONL stops the operation without overwriting the source.
+- Replay is now a derived projection embedded in each observation, so one atomic append stores both the outcome fact and redacted replay. Legacy replay files remain readable, while new observations no longer depend on a second file write.
+
+## 4.3.73 交付证据并发与长期一致性 / Delivery Evidence Concurrency and Long-Term Consistency
+
+- 验证回执不再只读取最后 100 条；任务级流式读取保证早期通过证据持续可解析，同时避免全工作区扫描。人工验证现在必须提供明确操作人，数组字段在 CLI、HTTP、MCP 统一校验。
+- Skill 观测在同一事务中完成活跃状态复核、证据去重、观测与 replay 追加；Registry 对独立陈旧快照做按 Skill 合并，并将 canary、契约更新、发布和回滚收敛到完整读改写事务。
+- 子任务状态、阶段门禁、历史和交付矩阵采用锁内原子写入；需求、子任务和验收文件更新后保持 schema v2。验证命令不存在、权限或编码异常返回结构化 `environment_error`，不再暴露内部异常。
+
+## 4.3.73 Delivery Evidence Concurrency and Long-Term Consistency
+
+- Validation receipts are no longer limited to the latest 100 entries. Task-local streaming keeps older passed evidence resolvable without scanning the workspace. Manual verification now requires an explicit actor, and CLI, HTTP, and MCP consistently validate array fields.
+- Skill observations atomically recheck lifecycle, deduplicate evidence, and append both observation and replay. The registry merges independent stale snapshots by Skill, while canary, contract update, publication, and rollback use complete read-modify-write transactions.
+- Subtask state, stage gates, history, and delivery matrices use locked atomic writes. Requirement, subtask, and acceptance files remain schema v2 after updates. Missing commands, permission failures, and encoding errors now return structured `environment_error` results instead of internal exceptions.
+
+## 4.3.72 Skill 证据与生命周期闭环修复 / Skill Evidence and Lifecycle Closure Fixes
+
+- CLI、HTTP、MCP 现在均可显式记录 `manual_verified`，并自动生成不泄露任务标题的 `delivery-validation:<task-ref>:<receipt-id>` 引用。关闭、候选、观测和发布只接受可解析的已通过回执；伪造引用及同一回执重复计数会被拒绝。
+- Skill 每次进入 canary 都生成独立 `activation_id`。回滚后复用稳定 Skill 记录开启新 activation，旧观测与 replay 不进入新评估；状态、契约文件和阈值建议保持一致。
+- 残缺旧契约不再进入默认推荐；Skill registry 使用原子替换、有效备份恢复、双损坏拒写和稳定 ID 去重。协作资产注册失败不会把已完成发布误报为失败，而是返回可执行的 `artifact asset-sync` 修复动作。
+- 修复真实工作区性能脚本的导入结构，恢复仓库级 Ruff 门禁。
+
+## 4.3.72 Skill Evidence and Lifecycle Closure Fixes
+
+- CLI, HTTP, and MCP can now explicitly record `manual_verified` receipts and automatically emit privacy-safe `delivery-validation:<task-ref>:<receipt-id>` references. Close, candidate, observation, and publication gates accept only resolvable passed receipts; forged references and duplicate receipt counting are rejected.
+- Every canary run has an independent `activation_id`. Restarting after rollback reuses the stable Skill record while excluding prior observations and replays; status, generated contract files, and threshold recommendations stay aligned.
+- Incomplete legacy contracts no longer enter default recommendation. The Skill registry now uses atomic replacement, valid-backup recovery, double-corruption refusal, and stable-ID deduplication. Collaboration-asset failures return an actionable `artifact asset-sync` repair without misreporting an already completed publication as failed.
+- Fixed the real-workspace benchmark import structure and restored the repository-wide Ruff gate.
+
+## 4.3.71 可执行经验边界契约 / Executable Experience-Boundary Contract
+
+- 交付 Skill 契约升级为 v2：新增适用条件、禁止条件、验收证据和回滚方式；候选、灰度、发布、推荐和生成的 `SKILL.md` 共享同一份契约。
+- 进入灰度和发布前必须有至少一条与 `acceptance_evidence` 匹配的真实验证回执。默认只接受 `executor` 或 `manual_verified`，并要求 `acceptance_ids` 与 `evidence_refs`，阻止无来源的模型自评沉淀为团队经验。
+- 推荐结果现在明确返回禁止条件、停止条件和回滚动作；CLI、README、用户指南、参考文档、规格与 MCP 指南均同步了完整 JSON 契约。
+
+## 4.3.71 Executable Experience-Boundary Contract
+
+- Delivery Skill contracts are now v2 and add applicability conditions, prohibited conditions, acceptance evidence, and rollback behavior. Candidates, canaries, publication, recommendations, and generated `SKILL.md` files share this contract.
+- Canary and publication require at least one real validation receipt matching `acceptance_evidence`. The default accepts only `executor` or `manual_verified` with both `acceptance_ids` and `evidence_refs`, preventing unsourced model self-assessments from becoming team experience.
+- Recommendations now expose prohibited conditions, stop conditions, and rollback actions. The CLI, README, user guide, reference, specification, and MCP guide document the complete JSON contract.
+
+## 4.3.70 AST 重载返回类型消歧 / AST Overload Return-Type Disambiguation
+
+- 嵌套调用 AST 现在携带内层参数标识与参数数量；resolver 仅在参数的静态类型与重载声明完全一致时选择返回类型。该规则可解析转换器 `convert(req)` 后的 DTO 链式 accessor，同时在变量类型缺失、重载不匹配或仍不唯一时维持 unresolved。
+
+## 4.3.70 AST Overload Return-Type Disambiguation
+
+- Nested-call AST facts now retain inner argument names and arity. The resolver chooses an overload return type only when static argument types exactly match its declared parameters. This resolves DTO accessors after converters such as `convert(req)` while keeping missing, mismatched, or ambiguous overloads unresolved.
+
+## 4.3.69 局部刷新跨文件解析修复 / Scoped Refresh Cross-File Resolution Fix
+
+- 路径或项目定向 reindex 现在使用完整持久化符号表进行只读调用解析，但仅重写变更范围的图切片。修复了局部刷新后跨文件接口、DTO、转换器调用被错误降级为 unresolved 的问题，同时避免向未变更文件写入图数据。
+
+## 4.3.69 Scoped Refresh Cross-File Resolution Fix
+
+- Path- and project-scoped reindex now resolves calls against the full persisted symbol index while rewriting only the changed graph slice. This prevents cross-file interface, DTO, and converter calls from being incorrectly downgraded to unresolved after a local refresh, without rewriting unchanged graph data.
+
+## 4.3.68 AST 嵌套调用解析 / AST Nested Call Resolution
+
+- Tree-sitter Java 现在补充一段可证明的嵌套调用链，并将唯一返回类型上的显式方法或 Lombok accessor 解析为 `chain_return_type` / `chain_return_type_lombok_accessor`。返回类型会在 tree-sitter 与补充解析合并处统一规范化，避免 `public Type` 与 `Type` 被误判为多个类型；Tree-sitter 不可用时仍保守降级。
+
+## 4.3.68 AST Nested Call Resolution
+
+- Tree-sitter Java now supplements a single provable nested call transition and resolves explicit methods or Lombok accessors on a unique return type as `chain_return_type` / `chain_return_type_lombok_accessor`. Return types are normalized across tree-sitter and supplement facts so `public Type` and `Type` do not look ambiguous; the unavailable-parser path remains conservative.
+
+## 4.3.67 Java 嵌套参数伪链路修复 / Java Nested-Argument False Chain Fix
+
+- 正则 Java 解析器不再把 `foo.bar(convert(x).setY(y))` 误判为 `foo.setY(...)` 链式调用。嵌套实参尚不能证明接收者类型时保持未展开，避免向图谱写入错误的低置信调用边；受影响文件可通过局部 reindex 清理旧边。
+
+## 4.3.67 Java Nested-Argument False Chain Fix
+
+- The regex Java parser no longer misclassifies `foo.bar(convert(x).setY(y))` as a `foo.setY(...)` chain. Nested arguments remain unexpanded until their receiver type can be proven, avoiding false low-confidence graph edges; a scoped reindex removes affected legacy edges.
+
+## 4.3.66 Java 调用解析 Campaign 选择修复 / Java Call Resolution Campaign Selection Fix
+
+- 未解析调用报告的 `campaign` 不再按全量最大类别错误地选择外部依赖或范围外调用；它仅在可通过私有逻辑锚点验证的本地类别中选择目标，并返回 `candidate_samples`、排除类别与明确的范围治理动作。这样不会为降低未解析率而诱导不安全的 resolver fallback。
+
+## 4.3.66 Java Call Resolution Campaign Selection Fix
+
+- The unresolved-call report no longer picks external or out-of-scope calls merely because they are the largest category. Its `campaign` selects only locally provable categories, returns `candidate_samples` and excluded categories, and gives an explicit scope-governance action when no safe resolver campaign exists.
+
+## 4.3.65 外部能力目录与漂移审计 / External Capability Registry and Drift Audit
+
+- 新增 `external-capability-audit` 与显式 `external-capability-snapshot`，以及 MCP Admin 对应 action。只采集 Codex/Claude Code Skill、插件和 MCP 配置的元数据、哈希与作用域，不读取正文、不执行安装或宿主配置变更。
+
+## 4.3.64 真实工作区运行治理 / Real Workspace Runtime Governance
+
+- 新增只读 `runtime-governance` CLI、HTTP 与 MCP Admin 入口，统一汇总 P95 趋势、空间预算、索引 generation、ANN 与活跃后台任务。未初始化工作区不会为巡检创建 SQLite，任何 reindex、ANN rebuild、vacuum 或 GC 仍必须显式执行。
+
+## 4.3.64 Real Workspace Runtime Governance
+
+- Added read-only `runtime-governance` through CLI, HTTP, and MCP Admin. It aggregates P95 trends, storage budget, index generation, ANN, and active jobs. Inspection never creates SQLite in an uninitialized workspace; reindex, ANN rebuild, vacuum, and GC remain explicit actions.
+
+## 4.3.63 评测可信化与 Java 精度 Campaign / Evaluation Trust and Java Precision Campaign
+
+- `skill-up` 初始化新增本地评测 policy，默认禁用未隔离的 `without_skill` 对比并要求 3 到 5 个脱敏可观察 case；执行结果区分 `pass`、`skill_failure`、`evaluation_failure` 与 `environment_error`，环境故障不计入 Skill 失败率。
+- Java 未解析调用报告新增 `campaign` 与逻辑锚点 case 契约。报告选定最大类别，但在 expected/allowed/forbidden target 门禁通过前明确锁定 resolver/parser 规则修改，避免猜测性 fallback。
+
+## 4.3.63 Evaluation Trust and Java Precision Campaign
+
+- `skill-up` initialization now writes a local evaluation policy that disables non-isolated `without_skill` comparisons and requires 3 to 5 sanitized observable cases. Runs classify `pass`, `skill_failure`, `evaluation_failure`, and `environment_error`, with environment faults excluded from Skill failure rates.
+- The unresolved Java-call report now adds a `campaign` and logical-anchor case contract. It identifies the largest category but locks resolver/parser changes until expected/allowed/forbidden target gates pass, preventing speculative fallbacks.
+
+## 4.3.62 真实 P95 闭环、路由契约审计与长任务体验 / Real P95 Loop, Route Contract Audit, and Long-Task UX
+
+- 新增显式 `performance-snapshot` / `performance-status`、HTTP 性能快照接口和 MCP Admin action。快照只保存 generation 与聚合 P50/P95/P99/结果计数，不保存查询、路径或源码，且永不进入普通查询热路径。
+- HTTP 注册表现在自动为全部已注册路径建立读写契约，并提供 `http-route-contract-audit`。审计会识别未分类、孤立声明、非法方法和名称表现为写入却被误声明为 GET 的路由。
+- 后台任务状态新增进度百分比、已耗时、ETA、可取消性与恢复动作；`/ui/jobs` 只轮询紧凑任务状态，不读取索引正文。
+
+## 4.3.62 Real P95 Loop, Route Contract Audit, and Long-Task UX
+
+- Added explicit `performance-snapshot` / `performance-status`, HTTP snapshot routes, and MCP Admin actions. Snapshots retain generation and aggregate P50/P95/P99/outcome counts only, never queries, paths, or source, and never run on the normal query hot path.
+- The HTTP registry now establishes read/write contracts for every registered path and exposes `http-route-contract-audit`. It detects unclassified routes, orphan declarations, invalid methods, and mutation-like paths accidentally declared as GET.
+- Background job status now includes progress percentage, elapsed time, ETA, cancel availability, and recovery action; `/ui/jobs` polls only compact job state rather than index content.
+
+## 4.3.61 本地热路径、空间预算与协作体验 / Local Hot Paths, Storage Budget, and Collaboration Experience
+
+- Context Pack 改为批量读取 top-K 节点的一跳关系，减少 SQLite 往返；workspace 的 index、artifact、audit 写入使用分域锁，降低 watcher、任务同步和审计追加的相互阻塞。
+- 新增 `artifact storage-budget`，按 graph、index、artifacts、memory 输出空间、预算状态和只读维护建议；增量 generation 持续以文件内容哈希识别未变化输入，不额外落盘冗余 AST 缓存。
+- 本地 HTTP/MCP 资产登记在未传 actor 时自动采用声明 owner 或 `local-agent`；协作治理仍只在显式共享时生效。
+
+## 4.3.61 Local Hot Paths, Storage Budget, and Collaboration Experience
+
+- Context Pack now batch-reads one-hop edges for top-K nodes, reducing SQLite round trips. Workspace index, artifact, and audit writes use scoped locks to reduce watcher, task-sync, and audit contention.
+- Added `artifact storage-budget`, reporting graph, index, artifacts, and memory usage with read-only maintenance guidance. Incremental generations continue to use file content hashes without persisting a redundant AST cache.
+- Local HTTP/MCP asset registration derives a missing actor from the declared owner or `local-agent`; governance remains opt-in through explicit sharing.
+
+## 4.3.60 HTTP 安全、资产可靠性与 Context Pack 硬预算 / HTTP Security, Asset Reliability, and Context-Pack Hard Budgets
+
+- HTTP GET 现在严格只读；所有会改变工作区状态的路由必须 POST。非回环地址绑定必须提供 `--access-token` 或 `MEMORY_CENTER_HTTP_TOKEN`。
+- 协作资产 registry 改为临时文件原子替换和有效备份恢复；损坏且无法恢复时拒绝写入，不再以空 registry 覆盖历史数据。活跃 CodeGraph 使用稳定系统主体，多个 Agent 可重复同步。
+- 资产 metadata 限制为 16 KiB，status/loadout 使用默认总预算并返回 `truncated`；Context Pack 增加 `budget_tokens`、`truncated_sections`，最终响应执行硬性 Token 裁剪。
+
+## 4.3.60 HTTP Security, Asset Reliability, and Context-Pack Hard Budgets
+
+- HTTP GET is now strictly read-only; every route that can change workspace state requires POST. Non-loopback binding requires `--access-token` or `MEMORY_CENTER_HTTP_TOKEN`.
+- Collaboration asset registries now use temporary-file atomic replacement and valid-backup recovery. Writes fail safely when neither copy is valid, while the active CodeGraph has a stable system owner for multi-Agent synchronization.
+- Asset metadata is capped at 16 KiB; status/loadout use total response budgets and expose `truncated`. Context packs add `budget_tokens` and `truncated_sections`, with a final hard token-budget guard.
+
+## 4.3.59 协作资产权限与预算修复 / Collaboration Asset Authorization and Budget Fixes
+
+- 既有协作资产只允许 owner 更新或绑定；审批禁止 owner 自审，registry 的读改写在同一文件锁内完成，避免并发丢写。
+- 资产同步保留已审批状态；私有资产可装载到 owner 显式绑定的 Agent/角色；协作资产摘要纳入 context pack 的独立预算与 Token 估算。
+
+## 4.3.59 Collaboration Asset Authorization and Budget Fixes
+
+- Existing collaboration assets can only be updated or bound by their owner; owners cannot self-approve, and registry read-modify-write operations share one file lock to prevent concurrent lost updates.
+- Asset synchronization preserves approved state; private assets may load for owner-bound Agents/roles; collaboration summaries now consume a dedicated context-pack budget and token estimate.
+
+## 4.3.58 本地协作资产与角色装载 / Local Collaboration Assets and Role Loadouts
+
+- 新增统一协作资产 registry，覆盖 Task、已发布 Delivery Skill、Wiki 文档与活跃 CodeGraph。资产带 owner、版本、状态、可见性、来源与 Agent/角色绑定；私有为默认值，团队/受限共享须提交并审批。
+- `mc_context_pack`、HTTP、CLI 与 `mc_admin` 接入有界资产 loadout。上下文只附带授权资产摘要、来源引用和代码证据，不复制源码、文档正文或会话内容。
+- 新增工作区内文档 Wiki 资产登记，派生 Markdown 链接和有界代码节点证据；已发布 Delivery Skill 自动登记为私有资产。
+
+## 4.3.58 Local Collaboration Assets and Role Loadouts
+
+- Added a unified local collaboration asset registry for Tasks, published Delivery Skills, Wiki documents, and the active CodeGraph. Assets carry owner, version, state, visibility, provenance, and Agent/role bindings; private is the default and team/restricted sharing requires submission plus approval.
+- Added bounded asset loadouts to `mc_context_pack`, HTTP, CLI, and `mc_admin`. Context includes only authorized metadata, excerpts, provenance, and code evidence, never source, document bodies, or conversations.
+- Added workspace-document Wiki registration with bounded Markdown links and graph-backed code evidence; published Delivery Skills register automatically as private assets.
+
+## 4.3.57 架构门禁修复 / Architecture Gate Fixes
+
+- 补齐 `core/providers` 模块边界说明，并修正 targeted refresh 测试导入顺序，恢复全量 Ruff 与架构回归门禁。
+- 将 MCP 查询工具共享的符号提取、请求校验、可降级分析和响应整形迁移至 `mcp/tool_support.py`，使 `mcp/server.py` 保持为轻量工具注册入口。
+
+## 4.3.57 Architecture Gate Fixes
+
+- Added the `core/providers` module guide and fixed targeted-refresh test import order, restoring Ruff and architecture regression gates.
+- Moved shared MCP query helpers for symbol extraction, validation, graceful degradation, and response shaping into `mcp/tool_support.py`, keeping `mcp/server.py` focused on tool registration.
+
+## 4.3.56 可执行 Skill 契约与脱敏 Replay / Executable Skill Contracts and Redacted Replays
+
+- 交付 Skill 候选新增版本化 `contract`：适用语言、前置条件、停止条件、输入字段、输出字段和 replay 策略。`delivery-skill-contract-update`、`/workspace/delivery/skill/contract`、`mc_admin(action="delivery_skill_contract_update")` 复用同一状态转换。
+- canary 与发布会校验契约；发布要求达到 `minimum_verified_passed`（默认三条）的带验证引用成功观测和自动生成脱敏 replay，且没有失败。推荐入口可按 `language` 过滤已发布 Skill，并返回适用边界与停止条件。
+- 新增 `delivery-skill-replay`、`/workspace/delivery/skill/replay`、`mc_admin(action="delivery_skill_replay")`。replay 仅保存契约哈希、语言、结果、证据引用、时延和 Token 指标；不保存源码、需求正文、日志、外部正文、密钥或操作人。
+- 观测与 replay 按 `contract_sha256` 隔离；修订 canary 契约会要求重新积累当前版本证据，已发布 Skill 的契约不可原地修改。
+
+## 4.3.56 Executable Skill Contracts and Redacted Replays
+
+- Delivery Skill candidates now carry a versioned `contract`: applicable languages, preconditions, stop conditions, input fields, output fields, and replay policy. `delivery-skill-contract-update`, `/workspace/delivery/skill/contract`, and `mc_admin(action="delivery_skill_contract_update")` share the same state transition.
+- Canary and publication validate the contract. Publication requires the contract's `minimum_verified_passed` threshold (three by default) of successful observations with verification references and automatically generated redacted replays, with no failures. Recommendations can filter published Skills by `language` and return applicability boundaries and stop conditions.
+- Added `delivery-skill-replay`, `/workspace/delivery/skill/replay`, and `mc_admin(action="delivery_skill_replay")`. Replays retain only contract hashes, languages, outcomes, evidence references, latency, and token metrics; they never store source, request bodies, logs, external bodies, secrets, or actors.
+- Observations and replays are isolated by `contract_sha256`; a revised canary contract requires fresh evidence, while a published Skill contract is immutable.
+
+## 4.3.55 跨 Provider 证据融合与健康路由 / Cross-Provider Evidence Fusion and Health Routing
+
+- Bridge 的只读 `code_navigation` 工具现在作为动态 Provider 进入 `ProviderRegistry`，与 GitNexus 使用同一进程内 P95、错误率和成本分排序；超时或失败会在后续联邦初始化中被降权。
+- 新增 `provider-evidence-fuse`、`GET /workspace/provider-evidence-fuse` 与 `mc_mcp_bridge(evidence_refs_json=...)`。融合仅接受脱敏 EvidenceRef，按显式 `claim.subject/predicate/value` 去重并返回 `CONSISTENT`、`CONFLICT` 或 `INSUFFICIENT_EVIDENCE`。
+- 冲突生成只读 `verify_conflict` Action；无结构化 Claim 的结果只保留来源线索，绝不根据外部正文、哈希或文本差异制造冲突。融合器不持久化外部正文或 EvidenceRef。
+
+## 4.3.55 Cross-Provider Evidence Fusion and Health Routing
+
+- Read-only Bridge tools with `code_navigation` now join `ProviderRegistry` as dynamic providers and share in-process P95, error-rate, and cost-score routing with GitNexus. Timeouts and failures are penalized for later federated bootstrap calls.
+- Added `provider-evidence-fuse`, `GET /workspace/provider-evidence-fuse`, and `mc_mcp_bridge(evidence_refs_json=...)`. Fusion accepts only redacted EvidenceRef values, deduplicates explicit `claim.subject/predicate/value`, and returns `CONSISTENT`, `CONFLICT`, or `INSUFFICIENT_EVIDENCE`.
+- Conflicts emit read-only `verify_conflict` Actions. Results without structured claims remain provenance hints and never become conflicts from external body, hash, or text differences. The fuser persists neither external bodies nor EvidenceRef values.
+
+## 4.3.54 MCP SDK 运行时兼容修复 / MCP SDK Runtime Compatibility Fix
+
+- 将 MCP SDK 约束为 `mcp>=1.2.0,<2.0.0`。SDK 2.0 已移除本项目 MCP Server 使用的 `mcp.server.fastmcp` 路径；此前宽泛依赖会使 `memory-center-mcp` 在已安装环境中无法启动。
+- 同步更新回归断言并在本地 pipx 环境验证 MCP Server 能创建，确保受限 MCP Client Bridge 的 MCP 入口不是仅源码可达。
+
+## 4.3.54 MCP SDK Runtime Compatibility Fix
+
+- Constrained the MCP SDK to `mcp>=1.2.0,<2.0.0`. SDK 2.0 removed the `mcp.server.fastmcp` path used by this project's MCP Server, so the former broad dependency could prevent `memory-center-mcp` from starting.
+- Updated the regression assertion and verify MCP Server creation in the local pipx environment so the restricted MCP Client Bridge is reachable through MCP at runtime, not only in source.
+
+## 4.3.53 受限 MCP Client Bridge / Restricted MCP Client Bridge
+
+- 新增 `mcp-bridge-status`、`mcp-bridge-action`、`GET /workspace/mcp-bridge-status`、`GET /workspace/mcp-bridge-action` 和 MCP `mc_mcp_bridge`。Memory Center 可直接调用工作区策略白名单中的 IDEA MCP、GitNexus MCP 等外部 HTTP MCP Server。
+- 策略固定在 `.memory-center/provider-mcp-policy.json`：仅接受 `http(s)` URL、`sse|streamable_http` 传输、允许的工具名以及 `{query}` / `{target}` 参数模板；不支持 stdio、自由工具名、自由参数、令牌字段或任意命令。
+- Bridge 在调用前通过 MCP `list_tools` 校验工具真实暴露，单次超时最多 60 秒，输出最多 12,000 字符。外部正文不进入索引、SQLite、断言或审计存储；成功结果只附带会话级 `EvidenceRef`。
+- `controlled_write` 和 `destructive` 动作无条件要求显式 `confirm=true`，即使策略错误声明为无需确认也不会放行。
+
+## 4.3.53 Restricted MCP Client Bridge
+
+- Added `mcp-bridge-status`, `mcp-bridge-action`, `GET /workspace/mcp-bridge-status`, `GET /workspace/mcp-bridge-action`, and MCP `mc_mcp_bridge`. Memory Center can directly invoke external HTTP MCP servers such as IDEA MCP and GitNexus MCP that are explicitly whitelisted by workspace policy.
+- `.memory-center/provider-mcp-policy.json` accepts only `http(s)` URLs, `sse|streamable_http` transports, allowed tool names, and `{query}` / `{target}` argument templates. Stdio, free-form tools and parameters, token fields, and arbitrary commands are unsupported.
+- The bridge verifies the exposed tool with MCP `list_tools`, caps each call at 60 seconds and output at 12,000 characters. External bodies never enter indexes, SQLite, assertions, or audit storage; a successful result only adds a session-level `EvidenceRef`.
+- `controlled_write` and `destructive` actions always require explicit `confirm=true`, even if a malformed policy declares otherwise.
+
+## 4.3.52 Provider 健康路由与按需索引行动卡 / Provider Health Routing and On-Demand Index Actions
+
+- Provider Registry 新增进程内滑动窗口健康观测：每次调用记录耗时和结果，返回 P95、错误率和成本分，并以静态优先级加健康惩罚选择读取 Provider；不启动后台扫描，也不写入工作区。
+- GitNexus 明确返回未索引或陈旧状态时，`bootstrap-context` 增加 `action_cards`，建议确认后运行固定的 `analyze --index-only`；不会隐式建立或刷新外部索引。
+
+## 4.3.52 Provider Health Routing and On-Demand Index Actions
+
+- Provider Registry adds in-process sliding-window health observations. Each call records latency and status, returning P95, error rate, and cost score; read routing combines static priority with health penalties without background scans or workspace writes.
+- When GitNexus explicitly reports a missing or stale index, `bootstrap-context` adds confirmation-gated `action_cards` for fixed `analyze --index-only`; it never creates or refreshes an external index implicitly.
+
+## 4.3.51 受控外部动作 / Controlled External Actions
+
+- 新增 `provider-action`、`GET /workspace/provider-action` 与 MCP `mc_provider_action`。GitNexus 支持固定的 `impact`、`trace`、`detect-changes`、`check`、`analyze` 与 `clean` 动作。
+- 读取动作可直接执行；`analyze` 为 `controlled_write`、`clean` 为 `destructive`，均必须显式 `confirm=true`。所有参数由固定动作模板生成，不接受自由 argv 或 shell。
+
+## 4.3.51 Controlled External Actions
+
+- Added `provider-action`, `GET /workspace/provider-action`, and MCP `mc_provider_action`. GitNexus supports fixed `impact`, `trace`, `detect-changes`, `check`, `analyze`, and `clean` actions.
+- Read actions execute directly; `analyze` is `controlled_write` and `clean` is `destructive`, both requiring explicit `confirm=true`. All arguments come from fixed action templates; free argv and shell input are rejected.
+
+## 4.3.50 Provider Registry 与临时 EvidenceRef / Provider Registry and Ephemeral EvidenceRef
+
+- 新增只读 `ProviderRegistry`：按能力、优先级、超时、结果上限、写入模式和隐私模式选择外部 Provider，并记录完整降级尝试。
+- 联邦上下文结果新增 additive `provider_selection` 与 `evidence_ref`。`EvidenceRef` 仅保留来源、范围、观测时间、耗时、正文哈希和验证状态，不保存外部正文，也不会进入长期图谱。
+
+## 4.3.50 Provider Registry and Ephemeral EvidenceRef
+
+- Added read-only `ProviderRegistry`, selecting external providers by capability, priority, timeout, result cap, mutation mode, and privacy mode while reporting every fallback attempt.
+- Federated context now adds `provider_selection` and `evidence_ref`. An `EvidenceRef` retains only provenance, scope, observation time, latency, content hash, and verification state; it never stores external body content or enters the long-term graph.
+
+## 4.3.49 零初始化联邦上下文 / Zero-Initialization Federated Context
+
+- 新增 `bootstrap-context`、`GET /workspace/bootstrap-context` 与 MCP `mc_bootstrap_context`。已有 workspace 时读取 Memory Center；未初始化目录会尝试 GitNexus 的固定只读 `status/query/context` 命令，失败后才建议有界本地搜索。
+- GitNexus 结果标记为临时外部证据，不写入 `.memory-center/`、不合并进图谱、不会触发 analyze/reindex/clean 或任意 shell。结果含 provider、范围、观测时间、耗时、持久化边界与下一步动作；会话缓存最长 30 秒。
+
+## 4.3.49 Zero-Initialization Federated Context
+
+- Added `bootstrap-context`, `GET /workspace/bootstrap-context`, and MCP `mc_bootstrap_context`. Existing workspaces use Memory Center; uninitialized directories attempt fixed read-only GitNexus `status/query/context` commands before suggesting bounded local search.
+- GitNexus results are ephemeral external evidence: they never write `.memory-center/`, merge into the graph, trigger analyze/reindex/clean, or execute arbitrary shell. Results include provider, scope, observed time, latency, persistence boundary, and next action; the session cache is capped at 30 seconds.
+
+## 4.3.48 可选 skill-up 评测适配器 / Optional skill-up Evaluation Adapter
+
+- 新增 `delivery-skill-eval-status|init|run`：对已发布 Skill 生成脱敏的 `skill-up` 评测骨架，并通过固定 argv 执行 `validate/run`，可输出 JSON、JUnit、HTML 报告。
+- `skill-up` 是可选外部组件，未安装时返回明确诊断；执行必须显式 `--apply`，不接受任意 shell、不会进入查询热路径，也不会绕过现有 canary、证据或发布门禁。
+
+## 4.3.48 Optional skill-up Evaluation Adapter
+
+- Added `delivery-skill-eval-status|init|run`: creates a sanitized `skill-up` evaluation skeleton for published Skills and invokes fixed `validate/run` argv with JSON, JUnit, and HTML reports.
+- `skill-up` remains optional. Missing installations are diagnosable; execution requires explicit `--apply`, accepts no arbitrary shell, stays out of query paths, and cannot bypass canary, evidence, or publication gates.
+
+## 4.3.47 Lombok 布尔属性调用解析 / Lombok Boolean Property Call Resolution
+
+- Java 调用解析器现识别 Lombok `@Data`、`@Getter`、`@Setter` 或 `@Value` 中 `isSuccess` 形式布尔字段生成的 `isSuccess()` / `setSuccess(...)` 访问器。仅在字段与 Lombok 注解均已索引时补充本地边，外部类型和普通未声明方法仍保持未解析。
+
+## 4.3.47 Lombok Boolean Property Call Resolution
+
+- The Java call resolver now recognizes `isSuccess`-style boolean fields and their Lombok-generated `isSuccess()` / `setSuccess(...)` accessors for indexed `@Data`, `@Getter`, `@Setter`, or `@Value` types. External types and ordinary undeclared methods remain unresolved.
+
+## 4.3.46 语义索引去重与运行时检索 / Semantic Index Deduplication and Runtime Retrieval
+
+- `semantic-node-index` 不再持久化全量节点文档、稀疏向量、词频和 dense embedding；SQLite 倒排索引与 ANN 向量索引成为唯一检索存储，命中后仅按 ID 有界回填图节点，消除大型工作空间的重复镜像与 Python 全量扫描。
+- 新增 `artifact semantic-index-compact --dry-run|--apply`，可无 reindex 压缩旧版本语义镜像；随后通过 `artifact storage-vacuum --apply` 显式回收 SQLite 页。
+
+## 4.3.46 Semantic Index Deduplication and Runtime Retrieval
+
+- `semantic-node-index` no longer persists full node documents, sparse vectors, term frequencies, or dense embeddings. SQLite inverted and ANN vector indexes are now the sole retrieval stores; hits are bounded and hydrated by node ID.
+- Added `artifact semantic-index-compact --dry-run|--apply` to compact legacy semantic mirrors without reindex, followed by `artifact storage-vacuum --apply` to reclaim SQLite pages.
+
+## 4.3.45 FTS5 批量重建与局部维护 / FTS5 Bulk Rebuild and Scoped Maintenance
+
+- 完整 FTS5 重建改为 SQLite 内部 `INSERT ... SELECT`，不再将全量节点与搜索文本加载进 Python；主图 rebuild 可避免与 FTS rebuild 重复清空搜索表。
+- 局部刷新把 FTS 删除与插入收敛为单事务批量操作，并在 reindex 结果中增加 `fts_sync_mode`、`fts_changed_nodes`、`fts_elapsed_ms`。
+
+## 4.3.45 FTS5 Bulk Rebuild and Scoped Maintenance
+
+- Full FTS5 rebuild now uses SQLite-internal `INSERT ... SELECT` without loading all graph nodes and search text into Python; main graph rebuild can avoid clearing the search table twice.
+- Scoped refresh batches FTS deletes and inserts in one transaction and adds `fts_sync_mode`, `fts_changed_nodes`, and `fts_elapsed_ms` to reindex output.
+
+## 4.3.44 SQLite 单副本索引导出 / SQLite Single-Copy Index Exports
+
+- 文件、符号、契约、拓扑和语义等大型可重建索引只保留在 SQLite `index_mirror`，不再额外写入同内容 JSON 文件；读取入口统一走 SQLite。
+- 新增 `artifact index-export-cleanup --dry-run|--apply`，只删除已存在 SQLite canonical payload 的旧导出，不会删除未迁移的孤立文件。
+
+## 4.3.44 SQLite Single-Copy Index Exports
+
+- Large rebuildable file, symbol, contract, topology, and semantic indexes now remain only in SQLite `index_mirror`; identical JSON files are no longer written, and read paths use SQLite consistently.
+- Added `artifact index-export-cleanup --dry-run|--apply`, which removes legacy exports only when a canonical SQLite payload exists and never deletes unmigrated orphan files.
+
+## 4.3.43 索引代际与静态断言空间回收 / Index Generation and Static Assertion Reclamation
+
+- 成功 reindex 后自动执行 generation GC，仅保留当前与上一代；中断（包括 `Ctrl-C`）会将 reindex 生命周期和 index control 明确标记为失败，不再遗留伪 `building` 状态。
+- `assertion-sparsify` 现同时删除全部可由图边派生的旧静态断言镜像，包括历史 `SUPERSEDED` SQLite 行与 `json_records` 中的静态 JSON 镜像；人工验证、拒绝和治理覆盖保持不变。
+
+## 4.3.43 Index Generation and Static Assertion Reclamation
+
+- Successful reindex now runs generation GC automatically and retains only the active and previous generations. Interruptions, including `Ctrl-C`, mark both reindex lifecycle and index control as failed instead of leaving a false `building` state.
+- `assertion-sparsify` now removes every graph-derived legacy static assertion mirror, including historical `SUPERSEDED` SQLite rows and static JSON mirrors in `json_records`; human verification, rejection, and governance overrides remain intact.
+
+## 4.3.42 Lombok 链式返回类型解析 / Lombok Chained Return-Type Resolution
+
+- Java call resolver 现在可在首段为可验证 Lombok getter、字段类型在工作区唯一且第二段方法真实存在时，解析 `receiver.getField().target()` 为 `chain_lombok_accessor_return_type`；外部或歧义字段类型继续保持未解析。
+- 首次 BM25 格式迁移移除了数百万条 posting 的废弃预计算分值，只写入动态查询需要的原始统计，降低完整迁移与完整重建 CPU 成本。
+
+## 4.3.42 Lombok Chained Return-Type Resolution
+
+- The Java call resolver now resolves `receiver.getField().target()` as `chain_lombok_accessor_return_type` only when the first segment is a verifiable Lombok getter, the field type is unique in the workspace, and the second method exists. External or ambiguous field types remain unresolved.
+- Initial BM25 migration no longer computes obsolete scores for millions of postings; it writes only raw statistics used by dynamic queries, reducing full-migration and full-rebuild CPU cost.
+
+## 4.3.41 定向刷新增量 BM25 / Incremental BM25 for Scoped Refresh
+
+- SQLite 倒排索引现在持久化原始词频、文档频率和全局长度统计。局部 reindex 只读取、重分词并替换 `changed_node_ids`，未变化 posting 不再删除重写；查询时动态计分，保证与完整重建一致。
+- 新格式完整构建不再计算已废弃的逐 posting 预计算分值，首次迁移和完整重建只写入查询所需的原始统计。
+- reindex 新增 `bm25_sync_mode` 和 `bm25_changed_docs`。旧 BM25 格式仅在第一次局部刷新时安全完整迁移一次，返回 `full-legacy-fallback`，后续使用 `partial`。
+
+## 4.3.41 Incremental BM25 for Scoped Refresh
+
+- The SQLite inverted index now persists raw term frequencies, document frequencies, and global length statistics. Scoped reindex reads, tokenizes, and replaces only `changed_node_ids`, while untouched postings remain in place. Query-time scoring preserves full-rebuild equivalence.
+- Full V2 builds no longer compute obsolete per-posting scores; initial migration and full rebuild retain only raw statistics required at query time.
+- Reindex now reports `bm25_sync_mode` and `bm25_changed_docs`. A legacy BM25 index performs one safe full migration on its first scoped refresh as `full-legacy-fallback`; later scoped refreshes report `partial`.
+
+## 4.3.40 发布产物新鲜度与热缓存修复 / Published-Artifact Freshness and Hot-Cache Fix
+
+- 新鲜度优先以已发布 `graph-summary.json` 的时间判断；运行时审计、治理和记忆写入更新共享 `graph.db` 时，不再把索引错误标记为刚刷新。
+- 检索缓存键仅使用影响检索策略的新鲜度字段，不再包含展示用的时间与提示文本；同一 generation 的连续查询可以稳定命中缓存。
+
+## 4.3.40 Published-Artifact Freshness and Hot-Cache Fix
+
+- Freshness now prefers the published `graph-summary.json` timestamp. Runtime audit, governance, and memory writes that update shared `graph.db` no longer make the index appear freshly rebuilt.
+- Retrieval cache keys retain only freshness fields that affect the retrieval plan, excluding display timestamps and messages so consecutive queries on one generation can reliably hit cache.
+
+## 4.3.39 本地解释器兼容与批量写入修复 / Local Interpreter Compatibility and Batch-Write Fix
+
+- 批量治理写入、向量配对、语义编码结果和工作空间组查询不再依赖 `zip(strict=True)`；改为显式长度校验，因此保留不一致即失败的语义，同时能在 macOS 默认 Python 下正确运行。
+- HNSW 返回标签与距离数量不一致时会明确诊断，不再静默截断。
+
+## 4.3.39 Local Interpreter Compatibility and Batch-Write Fix
+
+- Governance batch writes, vector pairing, semantic encoder results, and workspace-group queries no longer depend on `zip(strict=True)`. Explicit length checks preserve fail-fast mismatch semantics while working on the macOS default Python.
+- A mismatched HNSW label/distance response now fails with an explicit diagnostic instead of silently truncating.
+
+## 4.3.38 查询外层阶段审计 / Query Outer-Stage Audit
+
+- `memory_query_hybrid` 新增 `performance.timing_ms`，覆盖初始化、新鲜度与策略、核心检索、范围与契约、断言摘要、质量与 Action、响应封装。
+- 查询操作审计仅记录上述聚合阶段耗时和核心检索阶段耗时，不记录查询正文、路径或结果载荷，便于在真实工作空间定位缓存外瓶颈。
+
+## 4.3.38 Query Outer-Stage Audit
+
+- `memory_query_hybrid` now exposes `performance.timing_ms` for setup, freshness and policy, core retrieval, scope and contracts, assertion summary, quality and actions, and response wrapping.
+- Query operation audit stores only aggregate outer and core-retrieval stage timings, never query text, paths, or result payloads, making real-workspace cache-external bottlenecks observable.
+
+## 4.3.37 已发布 generation 缓存键修复 / Published-Generation Cache-Key Fix
+
+- 检索缓存版本不再依赖共享 SQLite 的文件修改时间；治理 Action、审计和其他运行时写入不会让同一已发布 generation 的核心检索缓存失效。
+- 缓存键改为已发布 `active_generation` 与图摘要版本；发布或定向刷新后仍会自动失效。
+
+## 4.3.37 Published-Generation Cache-Key Fix
+
+- Retrieval-cache versioning no longer uses the shared SQLite file mtime, so governance actions, audit events, and other runtime writes do not invalidate the core cache for the same published generation.
+- Cache keys now use published `active_generation` and graph-summary versioning; publish and targeted refresh still invalidate automatically.
+
+## 4.3.36 检索热路径性能门禁 / Retrieval Hot-Path Performance Gate
+
+- Hybrid retrieval 新增阶段级 `retrieval_diagnostics.timing_ms`：精确检索、图检索、BM25、语义、向量、图排序、邻居扩展、跨工作空间和结果组装均可定位耗时。
+- 相同图 generation、查询、检索配置、策略和新鲜度下启用 20 秒、最多 64 项的进程内核心检索缓存；缓存只复用已索引证据，外层仍执行新鲜度、治理、行动和结果包装逻辑。
+- 相同 query 派生的 Action 改用稳定 ID 去重；只在首次出现时写入治理 JSONL 和读模型，重复读取仍返回同一 Action ID。
+- `release-gate` 新增默认 `2000ms` 的热查询 P95 绝对预算与 `stage_p95_ms`。超出预算会以 `hot_query_p95_budget_exceeded` 阻断发布；`--max-hot-query-p95-ms 0` 可显式关闭该绝对预算。
+
+## 4.3.36 Retrieval Hot-Path Performance Gate
+
+- Hybrid retrieval now returns per-stage `retrieval_diagnostics.timing_ms` for exact, graph, BM25, semantic, vector, graph rank, enrichment, cross-workspace, and assembly work.
+- A bounded 20-second, 64-entry in-process core retrieval cache applies only when graph generation, query, configuration, policy, and freshness match. Freshness, governance, actions, and response wrapping still run outside the cache.
+- Actions derived from the same query now use stable-ID deduplication: only the first occurrence writes governance JSONL and its read model, while repeated reads return the same Action ID.
+- `release-gate` now enforces a default 2000ms hot-query P95 budget and reports `stage_p95_ms`. Budget overruns fail with `hot_query_p95_budget_exceeded`; `--max-hot-query-p95-ms 0` explicitly disables the absolute budget.
+
+## 4.3.35 Java 基础对象方法范围分类 / Java Object-Method Scope Classification
+
+- 当接收者类型已在工作区可见、但 `equals`、`toString`、`hashCode`、`getClass` 等 Java 基础对象方法未在源码索引中声明时，未解析原因改为 `inherited_method_out_of_scope`。
+- 不生成业务调用边、不降低外部依赖边界；该调整仅将基础继承方法从本地多态待修队列中移出，使真实未解析报告更准确。
+
+## 4.3.35 Java Object-Method Scope Classification
+
+- Calls on visible workspace types to source-absent Java object methods such as `equals`, `toString`, `hashCode`, and `getClass` now use `inherited_method_out_of_scope`.
+- No business call edge is synthesized and external boundaries remain intact. This only removes base inherited methods from the local polymorphism-fix queue.
+
+## 4.3.34 Java 调用精度门禁与 P95 性能观测 / Java Call Gate and P95 Performance Observability
+
+- Java 调用评测现在将 `expected_resolution_levels` 纳入通过条件；例如链式调用 case 声明 `chain_return_type` 后，退化为普通解析会阻断门禁。
+- 新增 `eval-java-call-resolution-metrics`、HTTP `/workspace/eval-java-call-resolution-metrics` 和 MCP `mc_admin(action="eval_java_call_resolution_metrics")`，仅返回解析等级、链式调用数量、置信度和未解析率等聚合指标，不返回路径或源码。
+- `release-gate --query-samples N` 可记录冷查询 P95 和热查询 P95；可移植 baseline 优先比较热查询 P95，旧 baseline 继续回退比较 `duration_ms`。
+
+## 4.3.34 Java Call Gate and P95 Performance Observability
+
+- Java call evaluation now gates on `expected_resolution_levels`, so a `chain_return_type` case fails if it regresses to a generic resolution level.
+- Added aggregate-only Java call metrics through CLI, HTTP, and MCP; it exposes resolution levels, chain counts, confidence, and unresolved rate without source paths or code.
+- `release-gate --query-samples N` records cold and hot-query P95. Portable baselines prefer hot P95 and remain compatible with earlier `duration_ms` baselines.
+
+## 4.3.33 方法返回类型与链式调用 / Method Return Types and Chained Calls
+
+- Java 方法签名和 Method 图节点新增 `return_type`。
+- 对 `receiver.first().second()`，仅当首段返回类型和第二段目标均在工作区唯一可见时，生成 `chain_return_type` 调用解析结果。
+
+## 4.3.33 Method Return Types and Chained Calls
+
+- Java method signatures and Method graph nodes now include `return_type`.
+- `receiver.first().second()` resolves as `chain_return_type` only when both the first return type and second target are uniquely visible in the workspace.
+
+## 4.3.29 继承 Lombok 访问器解析 / Inherited Lombok Accessor Resolution
+
+- Java 索引新增直接父类型事实；当接收者类型、父类可见性、父类字段和 Lombok 注解均可验证时，调用可定位到父类的推断访问器。
+- 只沿工作区内直接可见的继承关系解析；外部 Mapper 基类、多实现接口和不确定泛型分派仍保持未解析，避免伪造业务调用边。
+
+## 4.3.29 Inherited Lombok Accessor Resolution
+
+- Java indexing now carries direct parent-type facts. A call resolves to an inherited Lombok accessor only when receiver type, parent visibility, backing field, and Lombok annotation are all verifiable.
+- Resolution follows only directly visible workspace inheritance. External mapper bases, multi-implementation interfaces, and uncertain generic dispatch remain unresolved to avoid false business edges.
+
+## 4.3.28 静态同名类型碰撞隔离 / Static Simple-Name Collision Isolation
+
+- 静态调用的未解析原因现在按当前文件的包与 import 可见性判断，不再因工作区其他位置存在同名类而把第三方工具类误列为“方法缺失/多态”。
+- 这项调整只改善分类与优化优先级，不为外部静态 API 合成项目内调用边。
+
+## 4.3.28 Static Simple-Name Collision Isolation
+
+- Static-call unresolved reasons now honor package and import visibility, so a same-named class elsewhere in the workspace cannot misclassify a third-party utility as a missing-method or polymorphism case.
+- This change improves diagnostics and prioritization only; it never synthesizes workspace call edges for external static APIs.
+
+## 4.3.27 Catch 参数类型提取 / Catch Parameter Type Extraction
+
+- Java 补充解析器现在会把单类型 `catch (Exception e)` 参数写入所属方法的局部类型表，使 `e.getMessage()` 等调用正确归为已知外部类型，而非本地接收者类型缺失。
+- 多异常联合 catch 保持未推断，避免选择其中一个类型后产生错误的项目内调用边。
+
+## 4.3.27 Catch Parameter Type Extraction
+
+- The Java supplement parser now records single-type `catch (Exception e)` parameters in the owning method's local type table, so calls such as `e.getMessage()` are classified as known external types rather than missing local receiver types.
+- Multi-catch remains intentionally unresolved, avoiding a false workspace edge from choosing one possible exception type.
+
+## 4.3.26 Java 未解析调用诊断收敛 / Java Unresolved-Call Diagnostics Refinement
+
+- 静态类风格调用且目标类不在工作区时，改标记为 `static_receiver_not_indexed`，不再误归类为本地接收者类型缺失；不会为外部 API 合成项目内调用边。
+- 未解析调用报告新增 `receiver_shape_counts`，并可在不全量重建旧索引的前提下，将旧记录中的静态类调用按外部依赖范围重新分类。
+- CLI、MCP admin 与 HTTP 继续共享同一只读诊断；文档明确 Agent 应先按类别采样，再用私有逻辑锚点 case 和 release gate 验证单一解析修复。
+
+## 4.3.26 Java Unresolved-Call Diagnostics Refinement
+
+- Static class-style calls whose target is outside the workspace now use `static_receiver_not_indexed` instead of being misclassified as missing local receiver types; no workspace edge is synthesized for external APIs.
+- The unresolved-call report now includes `receiver_shape_counts` and refines legacy static-call rows at read time, without requiring a full reindex.
+- CLI, MCP admin, and HTTP continue to share the same read-only diagnostic. Documentation now requires category-first sampling followed by private logical-anchor cases and a release-gate check for a single parser fix.
+
+## 4.3.25 工作流回滚保护与刷新队列并发修复 / Workflow Rollback and Refresh Queue Fixes
+
+- 已回滚的 workflow profile 不再参与自动推荐；全部画像都被回滚时明确返回 withheld 状态，而非继续给出不安全默认流程。
+- 修复异步定向刷新 worker 在队列为空时的清理竞态，后到请求会启动新 worker 或由现有 worker 消费，不再被注册表清理丢失。
+
+## 4.3.25 Workflow Rollback and Refresh Queue Fixes
+
+- Rolled-back workflow profiles are excluded from automatic recommendations. When every profile is rolled back, the result is explicitly withheld instead of returning an unsafe default.
+- Fixed the async targeted-refresh cleanup race. Requests arriving around worker shutdown are now processed by the active worker or a newly registered worker rather than being discarded.
+
+## 4.3.24 受控交付画像与范围契约 / Scoped Delivery Profiles
+
+- 新增 `maintenance` 工作流画像，用于健康检查、技术债治理与架构增量演进；所有画像明确返回分层上下文与交付护栏建议。
+- 交付子任务新增 `read_targets`、`write_targets`、`stop_conditions`；交付矩阵和派生 `TECH_SPEC.md` 展示范围覆盖率。
+- 工作区可通过 `delivery-policy.json` 的 `enforce_scope_contract` 严格要求范围契约，未满足时阻止进入实现阶段；默认保持关闭。
+
+## 4.3.24 Scoped Delivery Profiles
+
+- Added the `maintenance` workflow profile for health checks, technical-debt governance, and incremental architecture evolution. Workflow profiles now expose layered context and delivery guardrail guidance.
+- Delivery subtasks now support `read_targets`, `write_targets`, and `stop_conditions`; the delivery matrix and derived `TECH_SPEC.md` show scope-contract coverage.
+- Workspace owners can enable `enforce_scope_contract` in `delivery-policy.json` to block incomplete subtasks from entering implementation. It remains disabled by default.
+
+## 4.3.23 影响分析降级与可诊断错误 / Resilient Impact Analysis
+
+- `mc_analyze` 现在校验 `depth`、`direction`、`max_depth` 和 `execution_mode`。无效参数返回 `invalid_input`，不再误报为内部异常。
+- `standard` / `full` 的计划、规则、契约、检查清单和工件写入改为独立可降级阶段：影响图成功后，任一辅助阶段不可用只会返回 `analysis_status=partial`、阶段诊断和下一步动作，不会丢弃已获得的影响证据。
+- MCP 错误响应新增安全的 `diagnostics.operation`、`diagnostics.exception_class` 和 `diagnostics.trace_id`，可与本地 MCP 调用审计关联，同时不暴露源码、路径、密钥或异常正文。
+
+## 4.3.23 Resilient Impact Analysis
+
+- `mc_analyze` now validates `depth`, `direction`, `max_depth`, and `execution_mode`. Invalid parameters return `invalid_input` instead of an internal error.
+- Plan, rule, contract, checklist, and artifact-write phases in `standard` / `full` analysis are independently degradable. Once graph impact succeeds, an unavailable enrichment returns `analysis_status=partial`, phase diagnostics, and an actionable next step instead of discarding evidence.
+- MCP error responses now include safe `diagnostics.operation`, `diagnostics.exception_class`, and `diagnostics.trace_id` fields for correlation with local MCP audit records, without exposing source, paths, secrets, or exception text.
+
+## 4.3.22 可验证 Skill 演进闭环 / Verifiable Skill Evolution Loop
+
+- 交付 Skill 从“候选后直接发布”升级为 `candidate -> canary -> published|rolled_back` 生命周期。canary 不进入默认检索；正式发布至少需要三条带证据引用的成功观测且没有失败观测，禁止模型自评直接晋升。
+- 新增 `delivery-skill-canary|observe|evaluate|rollback|recommend`：以有界观测记录成功、失败、绕过、延迟和 Token 指标；回滚会立即撤出默认推荐，但不删除历史证据。
+- 新增离线 `delivery-failure-candidates` 与 `delivery-skill-synthesize`：前者按验证 profile 与验收标识聚合跨任务失败，后者从多个已验证候选归纳共同结构。两者均不写入原始源码、需求正文或验证日志，且不在 MCP/HTTP 查询热路径运行。
+- Skill registry 保存稳定 ID、版本、结构签名、生命周期、来源证据和工件路径；候选在进入 canary 前先进行结构相似度检查，重复候选要求人工合并审核。
+
+## 4.3.22 Verifiable Skill Evolution Loop
+
+- Delivery Skills now follow `candidate -> canary -> published|rolled_back`. Canary Skills stay out of default retrieval; publishing requires at least three successful observations with evidence references and no failed observations, never an LLM self-rating.
+- Added `delivery-skill-canary|observe|evaluate|rollback|recommend` for bounded success, failure, bypass, latency, and token measurements. Rollback removes default recommendation without deleting historical evidence.
+- Added offline `delivery-failure-candidates` and `delivery-skill-synthesize`. They aggregate cross-task failure metadata and synthesize common patterns from proven candidates without storing source text, request bodies, or validation logs, and never run on MCP/HTTP query hot paths.
+- The Skill registry now persists stable IDs, versions, structural signatures, lifecycle, evidence references, and artifact locations. Candidates are structurally compared before canary entry; likely duplicates require a human merge review.
+
+## 4.3.21 证据优先需求交付闭环 / Evidence-First Delivery Loop
+
+- 交付工作流升级为 `feature_delivery_v2`：需求项新增来源、范围边界、搜索词、候选模块、歧义和决策标记；阶段门禁会写入可追溯 `GateResult`。
+- 新增非写入需求拆解候选、`Requirement -> Subtask -> CodeTarget -> Acceptance -> Evidence` 交付矩阵以及派生 `TECH_SPEC.md`，任务恢复可读取有界矩阵。
+- 验证回执区分 `recorded_external`、`manual_verified` 与 `executor`。关闭和 Skill 提炼只接受执行器或人工验证证据；执行器仅运行 workspace policy 中预注册的 argv profile，保存超时、退出码、受限输出摘要和 hash。
+- Wiki 生成新增每个项目的有界模块地图，供 Agent 在候选模块确定后按需读取。
+
+## 4.3.21 Evidence-First Delivery Loop
+
+- Upgraded delivery workflow to `feature_delivery_v2` with requirement source, scope boundary, search-term, candidate-module, ambiguity, and decision fields; stage checks persist traceable `GateResult` records.
+- Added non-writing breakdown candidates, a derived `Requirement -> Subtask -> CodeTarget -> Acceptance -> Evidence` matrix, and a read-only `TECH_SPEC.md` projection consumed by task recovery.
+- Validation receipts now distinguish `recorded_external`, `manual_verified`, and `executor`. Closing and Skill extraction require executor or manual evidence; the executor only runs policy-registered argv profiles and records timeout, exit code, bounded output, and hash.
+- Wiki generation now emits a bounded per-project module map for on-demand Agent use.
+
+## 4.3.20 静态断言稀疏化 / Derived Static Assertions
+
+- 静态断言改由 `graph.db.edges` 按需派生，reindex 不再全量写入 `EXTRACTED` 断言表或 `assertions.jsonl`；断言存储仅保留人工验证、拒绝与治理状态覆盖。
+- 新增 `artifact assertion-sparsify --dry-run|--apply`，显式删除可派生的旧 `EXTRACTED` 副本，并将 JSONL 收敛为轻量迁移标记；SQLite 页回收保持为后续显式维护操作。
+
+## 4.3.20 Derived Static Assertions
+
+- Static assertions are now derived from `graph.db.edges` on demand. Reindex no longer materializes all `EXTRACTED` assertions into SQLite or `assertions.jsonl`; assertion storage keeps only sparse human verification, rejection, and governance overrides.
+- Added `artifact assertion-sparsify --dry-run|--apply` to explicitly delete derivable legacy rows and replace the JSONL export with a compact migration marker. SQLite page reclamation remains an explicit maintenance operation.
+
+## 4.3.19 运行时存储去重 / Runtime Storage Deduplication
+
+- 新增 `artifact storage-legacy-cleanup --dry-run|--apply`，仅在当前运行时已经使用 `graph/graph.db` 时识别和清理遗留 `memory/memory.db`，避免旧双存储架构继续占用磁盘。
+
+## 4.3.19 Runtime Storage Deduplication
+
+- Added `artifact storage-legacy-cleanup --dry-run|--apply`, which detects and removes retired `memory/memory.db` only when the active runtime already uses `graph/graph.db`.
+
+## 4.3.18 交付 Skill 演进与空间治理 / Delivery Skill Evolution and Storage Governance
+
+- 新增已验证交付到 Agent Skill 的受控闭环：只有已关闭、验收全部通过且存在定位证据的任务才能生成候选；候选必须显式发布，避免未验证经验自动进入正式 Skill。
+- 新增 `artifact delivery-skill-candidate|publish|status` 与 MCP admin 对应动作，并新增 `artifact compact-task`：超大任务工件流式 gzip 归档，仅保留有界恢复上下文。
+
+## 4.3.18 Delivery Skill Evolution and Storage Governance
+
+- Added a governed verified-delivery-to-Agent-Skill loop: only closed tasks with complete passing acceptance evidence and located code targets can create candidates, and candidates require explicit publication.
+- Added `artifact delivery-skill-candidate|publish|status`, matching MCP admin actions, and `artifact compact-task` to stream-gzip oversized task artifacts while retaining bounded recovery context.
+
+## 4.3.17 Java 调用边准确性 / Java Call-Edge Accuracy
+
+- 修复 Java 调用提取器扫描整个文件导致的伪调用：注解表达式字符串和字段初始化不再被写入 `CALLS_METHOD`。
+- 调用图现在仅从真实方法体提取调用，避免将 `@PreAuthorize("@ss.hasPermission(...)")` 等框架元数据误判为业务调用链，并降低真实工作区中的无接收者类型噪声。
+- 修复按绝对文件路径执行局部刷新时的分片路由：命中文件只重建所属服务的物理分片，避免保守回退触发全服务分片重建。
+- 局部刷新发布采用硬链接复用未变 SQLite 分片，并将重建分片临时写入后原子替换，避免复制整代大索引或修改上一代数据。
+- 图存储新增 `nodes.file_path` 索引；目录范围会先展开为已索引文件，图清理统一走精确匹配，避免大图数据库全表扫描。
+- 服务分片导出改为使用项目节点索引连接边表，不再向 SQLite 传入成千上万个双重 `IN` 参数。
+
+## 4.3.17 Java Call-Edge Accuracy
+
+- Fixed false Java calls caused by scanning entire files: annotation-expression strings and field initializers are no longer emitted as `CALLS_METHOD` edges.
+- Calls are now extracted only from executable method bodies, preventing framework metadata such as `@PreAuthorize("@ss.hasPermission(...)")` from polluting business call chains.
+- Fixed service-shard routing for absolute-path refreshes: a matching file now rebuilds only its owning service shard instead of falling back to all service shards.
+- Partial publication now hard-links unchanged SQLite shards and atomically replaces rebuilt shards, avoiding multi-generation index copies or mutation of the prior generation.
+- Graph storage now indexes `nodes.file_path`; directory scopes expand to indexed files before graph cleanup, so all graph removal uses exact lookups and avoids full scans of large graph databases.
+- Service-shard export now joins edges through indexed project nodes instead of passing SQLite two massive `IN` parameter lists.
+
+## 4.3.16 需求交付工作流 / Delivery Workflow
+
+- 新增可复用的 `feature_delivery_v1` 需求交付状态机：`intake -> breakdown -> locate -> implement -> verify -> close`；每个阶段均通过结构化门禁推进。
+- 任务空间新增需求、子任务、验收标准与只追加验证回执契约；完成关闭前必须为每项必需验收标准关联通过的验证回执。
+- CLI `artifact delivery-*`、MCP `mc_admin(action="delivery_*")` 和 HTTP `/workspace/delivery*` 共享同一应用服务；记录验证时只保存输入的脱敏摘要，不会执行命令。
+
+## 4.3.16 Delivery Workflow
+
+- Added reusable `feature_delivery_v1`: `intake -> breakdown -> locate -> implement -> verify -> close`, advanced only through structured gates.
+- Task spaces now carry requirement, subtask, acceptance, and append-only validation-receipt contracts; closing requires a passing receipt for every required acceptance criterion.
+- CLI `artifact delivery-*`, MCP `mc_admin(action="delivery_*")`, and HTTP `/workspace/delivery*` share one application service. Recording validation never executes a supplied command.
+
+本更新日志按**版本号**归纳，优先记录：
+
+- 用户可感知的新能力
+- 重要行为变化
+- 明确修复的真实 bug
+
+## 4.3.15 测试样例工作区隔离
+
+- 测试框架现在在每个测试前后校验 `examples/spring-cloud-demo/.memory-center` 的完整摘要。任何直接写入受跟踪样例工作区的测试会在当场失败，所有写操作必须使用 `tmp_path` 副本。
+
+## 4.3.15 Test Fixture Workspace Isolation
+
+- The test framework now hashes the demo workspace before and after every test, failing at the exact test that writes to the tracked fixture. Write tests must use a `tmp_path` copy.
+
+## 4.3.14 MCP 大日志保留闭环
+
+- MCP 审计的 JSONL 与 SQLite 查询在后台物理压缩期间立即按 30 天、10 万条窗口过滤；大日志不再短暂暴露过期数据。新增大日志非阻塞回归，确保维护线程不会拉长 MCP 工具响应。
+
+## 4.3.14 MCP Large-log Retention Closure
+
+- MCP audit reads now enforce the 30-day/100k window while background compaction is in progress. Large-log retention has a non-blocking regression guard.
+
+## 4.3.13 MCP 审计保留一致性
+
+- 修复首次 MCP 调用后过期审计记录仍短暂可见的回归。64 KiB 以内的小型审计日志同步收口，保证返回后立即符合 30 天/10 万条策略；大日志继续后台物理压缩，避免请求线程扫描和重写十万级 JSONL。
+
+## 4.3.13 MCP Audit Retention Consistency
+
+- Expired audit records are now removed synchronously for small logs, while large logs keep asynchronous physical compaction to preserve MCP latency.
+
+## 4.3.12 查询热路径与后台任务可靠性修复
+
+- 普通语义查询改为复用进程内本地 embedding 模型缓存；不会重复加载权重、不会联网下载，也不会因索引代际不一致隐式全量重建。大规模 dense 查询统一通过已发布 ANN，只有极小测试索引保留精确计算。
+- 默认 lookup 的断言摘要不再读取“最近断言”正文；修复百万级断言表为取一条记录而进行全表排序的 P0 延迟问题，断言详情页才会显式读取该切片。
+- `mc_start`、`mc_lookup` 的定向刷新改为后台合并执行；请求立刻使用当前已发布 generation，并通过 `auto_refresh.scheduled` 告知刷新已排队，避免哈希、图遍历和 partial reindex 阻塞 Agent。
+- 修复向量后端故障被误报为正常空结果的问题；现在返回 `vector_backend_query_failed` 和 `vector-ann-rebuild` 下一步动作。ANN rebuild/tune 管理操作最多等待 1 秒，不再被长维护锁卡住。
+- 后台任务增加进程 PID 与心跳，只在宿主 PID 已失效时标记 `interrupted`；取消请求持久化并在每个重建阶段协作生效，不再把正常长任务误判为中断。
+- 重排模型在单一执行器中最多等待 3 秒，超时保留原排序并返回诊断；同一 MCP 进程只保留一个活跃重排模型。MCP 审计清理移出工具请求线程，HTTP POST 请求体限制为 1 MiB。
+
+## 4.3.12 Query Hot-path and Background Job Reliability
+
+- Normal semantic queries reuse local process-cached embedding models, never download or rebuild a full semantic index implicitly, and use published ANN for large dense indexes.
+- Targeted refresh is scheduled in the background so lookup returns the current published generation immediately.
+- Vector backend failures, job heartbeat/cancellation, reranker deadlines, asynchronous audit retention, and HTTP request-size limits now have explicit bounded behavior.
+
+## 4.3.11 ANN 并发一致性与请求时延收口
+
+- 向量事实写入、HNSW 生成和 label 映射改为同一维护锁的原子推进；查询映射 label 前保持锁，消除 rebuild 与局部 refresh 交错造成的错位与部分索引。
+- ANN 查询锁等待上限为 300ms；维护占用时返回 `vector_ann_maintenance_in_progress` 和 `retry_after_ms`，不再无限等待造成 MCP 卡住。
+- Cross-Encoder 仅由当前 MCP 进程的显式预热激活；高级查询不会因磁盘缓存模型而同步加载权重。状态区分 `cached_not_prewarmed` 与 `ready`。
+
+## 4.3.10 检索稳定性与冷启动修复
+
+- 修复 embedding 档案切换后的向量维度漂移：sqlite-vec 现在显式保存表维度，维度不一致时不会误查询旧表，状态会要求完整 reindex 重建当前维度。
+- HNSW 的 rebuild、增量同步、删除、调优和读取使用同一文件锁，索引文件经临时路径原子替换；并发 reindex 与 ANN 维护不会再写出半个 ANN 文件或错配标签。
+- Cross-Encoder 重排器只加载本地缓存，普通 CLI/MCP 查询不会下载模型；新增 `retrieval-reranker-status`、`retrieval-reranker-prewarm` 和对应 `mc_admin` action，将下载移到显式维护窗口。
+- `advanced_query` 与普通 query 一样记录 `session_id` 的 `agent_guidance`，使 replay、采纳分析与后续检索调优获得完整输入。
+
+## 4.3.9 Agent 检索维护闭环
+
+- 高级检索和 ANN 维护能力通过 `mc_admin` 统一暴露：`advanced_query`、`vector_ann_status`、`vector_ann_rebuild`、`vector_ann_tune`、`retrieval_model_profile` 与 `eval_retrieval_replay`。
+- lookup 在大规模 dense embeddings 缺失 ANN 时返回可执行 `rebuild_vector_ann` Action，Agent 协议要求先重建、再调优、再重试原查询；普通查询不会隐式全量重建。
+- 生成到 Codex、Claude、Gemini、Copilot、Cursor 的 Agent 指令和 MCP 指南同步了触发条件、停止条件与模型切换边界。
+
+## 4.3.8 代码检索与自适应排序
+
+- SQLite 倒排检索升级为代码感知 BM25F：类/方法/契约名称权重高于路径和元数据，并复用驼峰拆分后的标识符 token。
+- hybrid 融合结果增加有界个性化图排序，只从 Top-3 查询种子沿关系传播最多两层，不扫描全图。
+- 新增可选 Cross-Encoder 级联重排：`query --rerank` 最多重排 12 条候选，模型不可用时保持原排序并返回诊断。
+- 新增 `vector-ann-tune`，以有界 self-recall 与 P95 探针选择 HNSW 查询 `ef`；新增工作区 `retrieval-model-profile`，可显式选择 BGE-M3 多语言 embedding 档案，仍须完整 reindex 后才生效。
+
+## 4.3.7 持久化 ANN 与真实回放校准
+
+- dense vector 检索不再在大型索引上回退到 Python 全量余弦扫描：优先使用 `sqlite-vec`，否则使用可持久化的 `hnswlib` HNSW；未就绪时返回明确诊断和 `vector-ann-rebuild` 下一步动作。
+- 小于 64 条向量的开发/测试索引保留有界精确校验；超过阈值没有 ANN 时不会静默扫描全部 embedding，避免阻塞 MCP 查询。
+- 新增 `memory-center vector-ann-status` 与 `memory-center vector-ann-rebuild`，旧 dense 向量可显式重建 HNSW，不在查询或局部 refresh 热路径隐式全量重建。
+- 新增 `memory-center eval-retrieval-replay [--apply]`：仅根据有 evidence 的人工验证 `retrieval-source` 反馈，以 Beta 平滑和样本收缩生成融合权重提案；agent guidance 采纳率不会被误当成召回正确性。样本不足时不写入任何权重。
+
+## 4.3.6 检索与图遍历算法优化
+
+- `RuntimeStore.neighbors` 由递归 CTE 改为有界分层 BFS，环状或高分支调用图不会重复物化路径；每层 SQL 查询受结果预算约束。
+- FTS 候选按 SQLite FTS5 `bm25` 相关度及稳定字段排序，改善多关键词检索的首屏结果稳定性。
+- SQLite 倒排索引的 BM25 查询改在数据库内完成 posting 聚合、排序和 Top-K 截断，避免高频词查询把全部候选回传 Python。
+- 默认稀疏语义检索在 SQLite BM25 索引就绪时不再重复扫描完整语义 JSON；BM25 缺失或显式启用 dense backend 时仍保留语义路径。
+
+## 4.3.5 运行时存储与测试职责收敛
+
+- 移除 `UnifiedStore`，以唯一 `RuntimeStore` 承载图索引、运行记录、断言和 refs，统一落在 `graph.db`。
+- 明确 `neighbors` 返回节点、`traverse_edges` 返回关系边；写事务回滚后继续抛出，FTS 和向量等可选能力保留可诊断降级。
+- 测试重组为 `entrypoints`、`index_storage`、`domain` 和 `regression` 四类，测试资源通过统一根映射访问，不再依赖平铺文件位置。
+
+## 4.3.4 Ref 事实源与死 shim 清理
+
+- payload ref 读写统一以 `graph.db.refs` 为准；删除 JSON 导出后仍可解析 ref，不再发生文件回退。
+- 删除无生产调用的 `mcp.action_registry` 转发模块及其兼容测试。
+- 读取矩阵明确区分 SQLite refs 与人工 Markdown 工件，消除文档与实现冲突。
+
+## 4.3.3 新架构收尾与历史冲突清理
+
+- 删除固定 Spring Cloud 初始化模板、旧 explanation 字段包装器、Python 3.9 `zip_strict` 兼容层和相应无效测试；`init` 只生成自动识别出的工作区模型。
+- 查询契约不再把无匹配契约伪装成低置信候选；当前范围没有证据时返回空结果并由 `knowledge_state` 表达范围与下一步动作。
+- 修复 session 事件在 SQLite 为空时回退 JSONL 的旧读路径，避免过期导出重新影响运行时结论。
+- 架构、MCP、用户和技术文档统一为 `graph.db` 单运行时事实库，JSON/JSONL/Markdown 仅作为导出或人工工件。
+
+## 4.3.2 运行时事实源收口
+
+- 会话、MCP/宿主交互、验证循环、回执、任务与刷新状态全部只从 SQLite 运行时事实库读取；JSON/JSONL 不再作为任意运行时查询的兜底。
+- `memory_query_hybrid` 仅在 freshness 为 `stale` 或 `pending` 且已解析服务范围时，执行最多 4 个候选文件的局部刷新；正常查询不增加刷新成本。
+- 清理遗留的文件/SQLite 双读诊断与旧 `memory_db_path` 命名，统一使用 `runtime_db_path`。
+
+## 4.3.1 存储与检索收敛
+
+- 运行时图、索引镜像、会话记录和断言统一收敛到 `.memory-center/graph/graph.db`；JSON/JSONL 保留为可审查导出，不再参与查询回退。
+- 删除无范围的 `memory_query` 内部门面，hooks、group 和 resume 统一使用 `memory_query_hybrid`。
+- 已解析服务范围的 hybrid/code 查询不再静默退回全局索引；服务分片缺失明确返回 `NOT_INDEXED`，避免扩大延迟和越过查询边界。
+- 移除无 schema 启发式记录的热路径兼容；当前稀疏余弦与 BM25 均作为受支持的检索算法。旧工作空间需显式 `reindex` 后使用。
+
+## 4.3.0 本体旧格式移除
+
+- 删除 `ontology-migrate`、旧 sidecar 自动转换和旧读模型回退逻辑；本体数据只接受 V2 格式。
+- 升级后的已有工作空间必须运行完整 `reindex` 重建 Assertion、Alias 与治理读模型；CLI、MCP、HTTP 的公开查询和管理入口保持不变。
+
+## 4.2.0 本体 V2 强制切换
+
+- 本体内部停止旧 sidecar 双读和回退：首次 Assertion 查询会强制把 SQLite 列与 JSON payload 迁移到 V2；迁移异常需重新 reindex，不再返回旧读模型。
+- release gate 的隐私字段检测改为全量 SQL 扫描，不再抽样最近断言；CLI、MCP 与 HTTP 的公开命令和字段保持稳定。
+
+## 4.1.36 本体演进完整收尾
+
+- 所有 hybrid 查询与 MCP lookup 的 `agent_next_steps` 都会投影为有界、稳定 ID 的 Action；Workbench 可从路由继承 task/session/actor 并写入断言状态审计。
+- 已在真实大型 workspace 跑通隔离局部 reindex 基线：断言侧车开销满足 5% 发布预算；本体演进计划的剩余功能、性能和入口一致性项完成收尾。
+
+## 4.1.35 本体闭环修复
+
+- 静态断言优先记录索引中的源码修改时间；已验证别名会扩展默认检索词并返回解析依据，未验证或替代关系不会自动合并。
+- MCP lookup 的结构化下一步动作会写入有界 Action 读模型；发布门禁在存在断言侧车时阻断无来源 VERIFIED、旧 generation 活跃断言和可疑私有正文键。
+
+## 4.1.34 本体发布性能门禁
+
+- 新增隔离临时存储中的 graph-only 与 assertion-sidecar reindex 对比门禁，并可接入 `release-gate`；局部范围预算为 5%，完整范围预算为 10%。
+
+## 4.1.33 身份与断言确认体验
+
+- 别名新增验证状态、置信度、有效期与 `ALIAS_OF`、`SAME_AS`、`RENAMED_FROM`、`REPLACES` 语义；默认仅合并有验证证据的等价关系。
+- CLI、MCP admin、HTTP、旧 Workbench 和 Vue Workbench 新增断言详情、验证、拒绝与深度分析入口；状态操作不会修改源码或删除历史。
+
+## 4.1.32 治理本体与双时间断言
+
+- registry 新增治理实体与关系端点约束；断言增加 provenance、relation mode、evidence refs、event/observed/valid 时间字段。
+- 新增 `ontology-migrate` 只读预检和显式回填，旧断言读模型保持兼容。
+
+## 4.1.31 统一知识状态
+
+- 查询与工作区状态新增 additive `knowledge_state`，明确 `FOUND`、`NOT_FOUND`、`NOT_INDEXED`、`STALE`、`UNKNOWN` 的范围、原因和下一步动作。
+
+## 4.1.30 局部刷新范围门禁
+
+- 新增 `eval-assertion-scope-gate`：先以只读方式统计指定逻辑路径实际选中的断言边，并与全图边数和范围上限比较；只有显式传入 `--apply` 才会发布一次局部 reindex。
+- 门禁输出范围比例、选中边数与可选实刷耗时，便于在真实工作空间验证局部索引没有退化为全量物化。
+
+## 4.1.29 静态断言历史保留
+
+- 已关闭静态断言新增低频保留策略：活跃事实永不裁剪；历史按 90 天与 200 万条上限同步清理 SQLite 镜像和 JSONL 审计流，避免长期全量 reindex 导致无限增长。
+
+## 4.1.28 局部断言物化修复
+
+- 局部 reindex 仅关闭并重建受影响路径/项目的断言，不再全图遍历、全量追加或替代无关 `VERIFIED/REJECTED` 断言。
+- `assertion_summary.recent` 以 SQLite 当前状态覆盖 payload 历史状态；证据等级与断言状态保持正交，`STALE`、`REJECTED` 不再污染 `evidence_level`。
+
+## 4.1.27 断言引用按需展开
+
+- 新增 `assertion-inspect`、`mc_admin(action="assertion_inspect")` 和 `/workspace/assertion`，可通过稳定 `assertion_ref` 按主键读取单条断言，不扫描审计 JSONL。
+
+## 4.1.26 断言状态三入口
+
+- 断言状态变更新增 `POST` 风格的 HTTP 路由 `/workspace/assertion-status`；CLI、MCP admin、HTTP 均复用同一校验和审计模型。
+
+## 4.1.25 断言验证与拒绝生命周期
+
+- 新增 `assertion-status` 与 `mc_admin(action="assertion_status")`；支持显式 `VERIFIED`、`REJECTED` 等状态更新，并追加审计事件。`VERIFIED` 必须提供脱敏验证引用，不能由置信度自动升级。
+
+## 4.1.24 本体热路径性能门禁
+
+- 新增 `eval-ontology-gate`，测量默认查询新增 assertion summary 的 SQLite 聚合开销，输出 P50/P95、10ms 预算和 pass/fail；不会扫描图、源码或历史审计流。
+
+## 4.1.23 治理证据关联
+
+- evidence subgraph 仅在当前目标直接关联时附加最多 20 条治理断言，实现从变更、决策、验证到任务节点的按需追溯，不进行全局关系推理。
+
+## 4.1.22 结构化行动对象
+
+- 可信结论卡新增 `Action` 对象，包含 action_type、前置条件、停止条件和失败回退，避免 Agent 或用户执行无界重试。
+
+## 4.1.21 本体诊断门禁
+
+- `runtime-inspect` 新增 SQL 聚合诊断：未知节点/关系类型、无来源 VERIFIED 和旧 generation 活跃断言，逐项给出命令级修复建议；不进入普通查询热路径。
+
+## 4.1.20 查询断言摘要
+
+- 旧 `memory_query` 与 hybrid 查询在保留原 schema 的前提下新增常量大小的 `assertion_summary`，包含 active、verified、inferred、stale 及下一步建议，不读取断言明细。
+
+## 4.1.19 本体运行检视
+
+- `runtime-inspect` 新增有界本体摘要：断言代际与状态、近期治理关系、身份别名数量及可执行修复建议，不扫描 JSONL 审计历史。
+
+## 4.1.18 可信结论卡
+
+- evidence subgraph 新增统一、最多 20 条的可信结论卡，展示状态、证据引用、新鲜度、风险和下一步动作；不读取源码或历史审计流。
+
+## 4.1.17 治理断言投影
+
+- watcher 变更确认会投影为 `Decision`、`Validation` 与 `VERIFIES` / `REJECTS` / `REQUESTS_ANALYSIS` 治理断言；复用现有确认输入，不改变已有 MCP、HTTP 或 CLI 契约。
+
+## 4.1.16 断言失效与身份别名
+
+- Assertion mirror 保存关系两端的文件归属；watcher/targeted refresh 写入 dirty journal 时，仅将匹配文件的活跃断言标为 `STALE`，不扫描或回写全图。
+- 新增独立身份别名 sidecar，支持可追溯的 canonical identity、重命名链解析及循环歧义提示，历史实体 ID 保持不变。
+
+## 4.1.15 断言历史读取
+
+- Assertion sidecar 增加受限的当前、指定 generation 与指定时间点读取接口；默认只返回 active 断言，避免普通使用场景扫描历史审计流。
+
+## 4.1.13 本体 registry 对齐
+
+- 本体 registry 补齐索引器实际使用的 Workspace/File/Bean/DataResource 节点与关系 endpoint 约束；新增 CI 校验，防止索引器边类型与 registry、文档漂移。
+
+## 4.1.14 本体断言侧车
+
+- 图关系会在代际发布后批量物化为 `assertions.jsonl` 和 SQLite 活跃断言镜像；图发布不再被侧车失败阻断，旧 `reindex` 返回 schema 保持不变。
+- 证据子图可按需附加 `assertion_ref`，用于追溯断言代际与来源，不增加普通查询的图扫描。
+
+## 4.1.12 本体认识论与体验扩展
+
+- 本体演进计划补充开放世界否定性结论、身份/别名、双时间、因果与相关性、规范/行动对象、信念修订约束，以及默认可信结论卡与可行动状态体验。
+
+## 4.1.11 本体演进实施计划
+
+- 新增独立本体演进计划，定义实体/断言分离、来源与状态正交、时间有效性、跨域治理关系、sidecar 迁移、性能预算、兼容策略和发布门禁。
+
+## 4.1.10 离线架构社区分析
+
+- 新增 `architecture-communities`、`GET /workspace/architecture-communities` 与 `mc_admin(action="architecture_communities")`，显式聚合项目社区、跨项目关系和高中心性节点。
+- 计算只在 SQLite 内聚合，结果缓存为轻量摘要；普通查询与 status 不触发计算，不加载完整图或源码。
+
+## 4.1.9 文档宪章与任务旅程
+
+- 新增 `DOCUMENT_CONSTITUTION.md`，定义文档真相层级、生命周期、公开入口更新门禁与架构不可变量；测试确保新能力在操作、参考、MCP 文档中可发现。
+- `USER_GUIDE` 新增按任务组织的操作地图；主计划移除已完成能力的旧执行顺序，架构文档新增可审计的不可变量。
+
+## 4.1.8 有界证据子图导出
+
+- 新增 `export-evidence-subgraph`、`GET /workspace/evidence-subgraph` 与 `mc_admin(action="evidence_subgraph_export")`，围绕一个节点或符号导出 JSON、Markdown、HTML 证据子图。
+- 导出严格限制为最多 3 跳、120 条边、80 个节点；不读取源码、不扫描全图、不进入普通查询热路径，输出携带节点/边证据等级。
+
+## 4.1.7 变更影响确认闭环
+
+- watcher 变更影响报告新增人工确认闭环：`confirmed`、`false_positive`、`deep_analysis_required`、`resolved` 可关联 task/session、结构化验证结论和验证人；CLI、HTTP 与 MCP admin 复用同一读写模型。
+- Workbench 的 `hot_refresh.pending_change_reports.high_risk_reports` 仅返回最多 5 条未确认高风险项。报告、确认审计和紧凑索引均按 30 天、10 万条维护，查询不加载代码或全量图。
+
+## 4.1.6 可信任务进度与运行证据
+
+### 证据等级
+
+- 查询结果、推理项、图边和质量摘要新增兼容的四级 `evidence_level`：`EXTRACTED`、`INFERRED`、`AMBIGUOUS`、`VERIFIED`；`VERIFIED` 仅由显式验证状态产生，不会因高置信度自动升级。
+- 质量摘要新增 `evidence_level_counts`，保留原有 `evidence_counts` 与 facade `_meta.evidence_level` 的来源语义不变。
+
+### 运行时检查
+
+- 新增 `memory-center inspect`、`/workspace/inspect` 和 `mc_admin(action="runtime_inspect")`，统一输出脱敏的 MCP、AGENTS、Hook、会话绑定、交互历史和索引运行状态，以及可执行的修复建议。
+
+### 会话证据链
+
+- `mc_start` 自动记录 Git 分支、HEAD 和脏文件数量；`mc_close`、`work-close` 和 HTTP close 接口可记录已执行验证命令的脱敏摘要、退出码与状态。
+- session summary 新增 `evidence_chain`，关联起始/结束代码版本、验证结论和 outcome；不会执行外部传入命令，非 Git 工作空间保持兼容降级。
+
+### 后台任务进度
+
+- workspace job 升级为版本化阶段进度，持久化 `progress` 和有界 `progress_events`；reindex 会上报扫描、解析、图谱、语义、检索和发布阶段，失败状态返回脱敏诊断。
+
+### 常驻定向索引
+
+- 新增每工作区单实例 watcher daemon：`watcher-start|status|stop` 与 `mc_admin(action="watcher_start|watcher_status|watcher_stop")` 支持后台监听、去抖、局部重建、PID 存活检查与优雅停止；Workbench 的 `hot_refresh.watcher` 显示相同持久化状态。
+- watcher 的局部 reindex 到达终态后会生成有界变更影响摘要，记录变更类别、受影响服务、generation、任务结果与证据等级；高风险契约变更只建议显式深度分析，避免后台自动消耗索引资源。
+
+### 4.1.4 交互历史与效果闭环
+
+- 新增脱敏交互历史：MCP 调用记录 trace/thread/turn、工具版本和索引 generation；Host Hook 可记录用户提示、编辑前检查和会话收尾等事件，不保存原始正文、源码或 payload。
+- 新增 `MEMORY_CENTER_THREAD_ID` 驱动的 thread-session 持久绑定，MCP 进程重启后可自动续接同一宿主线程的 session。
+- 新增 `mc_admin(action="interaction_record|interaction_effects|interaction_effects_refresh|active_session_bindings")`，用于补记宿主事件、查看调用 P50/P95、关联率和已关闭会话的验证成功率。
+- 历史数据按层治理：MCP/宿主原始交互 30 天、session event 90 天、session summary 365 天，均最多 100,000 条；JSONL 与 SQLite 镜像同步裁剪。
+- Workbench Usage 页面展示 MCP 调用效果，Backend 页面可筛选 MCP 与宿主交互账本。
+
+### 4.1.3 MCP 审计保留策略
+
+- `mcp-invocations.jsonl` 自动只保留最近 30 天且最多 100,000 条；首次 MCP 调用、每 5 分钟或达到上限时触发维护。
+- 清理会同步裁剪 JSONL 文件和本地 SQLite 镜像，避免已过期调用继续出现在验证查询中。
+
+### 4.1.2 MCP 调用审计
+
+- 所有公开 MCP 工具自动写入 `mcp-invocations.jsonl`，记录脱敏参数摘要、状态、耗时、结果规模和 session/task 关联，默认不保存请求或响应正文。
+- `mc_start` 后同一 MCP 进程的调用自动关联 session，并同步为 `tool_call` session event，供 replay、采纳分析和后续验证使用。
+- 修复 MCP schema 兼容测试仅扫描单个注册模块、且受函数排版影响的问题，改为跨公开模块的 AST 解析。
+
+### 4.1.1 定向刷新一致性修复
+
+- 定向刷新统一委托正式的按路径局部重建，避免刷新后丢失 API、Feign、MQ、配置与图谱关系。
+- dirty journal 现在可处理新增与删除源码文件；首次查询刷新继续以全量索引元数据为基线，避免无变更邻居被重复重建。
+- 保持热刷新 file generation 诊断，并新增 Controller Endpoint 保留、新增文件和删除文件的回归测试。
+
+### Core Domain Layout and Query Reliability / Core 领域规整与查询可靠性
+
+- 修复 `memory_query` 在普通查询路径引用未定义项目作用域、导致 `mc_lookup(mode="query")` 崩溃的问题。
+- 重整 Core 领域模块：契约治理迁入 `contracting/`，索引控制与分片迁入 `indexing/`，跨服务分片检索迁入 `retrieval/`，任务工件/回执/时间线迁入 `tasks/`，导出迁入 `presentation/`。
+- 移除 `core/*.py` 兼容转发层；所有内部调用、测试与文档只使用唯一的领域导入路径。
+- 进一步消除跨领域同名模块：索引入口为 `indexing/reindex.py`，编排工作区入口为 `orchestrator/workspace_ops.py`，benchmark case、reasoning request、walkthrough report/evaluation、audit reports 使用语义化文件名。
+- 为 `core` 及所有领域目录新增 README，说明职责、依赖边界和新增代码落点。
+
+### P2 Retrieval / Reasoning Quality Loop / 检索与推理质量闭环
+
+- 本地安装版本提升至 `4.1.0`。
+- 新增脱敏运行时契约样本与兼容校验：只接受服务、API/MQ 标识、DTO 字段名和计数，不保存 payload/body/header/message；活跃流量命中破坏性静态变更会阻断发布。
+- 新增双读/双写迁移状态，已批准迁移可把受控活跃风险降为 attention；full 契约分析、任务 evidence、pre-edit guard、runtime gate 和 release gate 复用同一运行时报告。
+- 本地安装版本提升至 `4.0.0`。
+- 新增 API/Feign/MQ/DTO 标准化契约快照与前后 diff；删除契约、DTO 字段删除和字段类型变化会作为 high severity breaking change。
+- `mc_analyze(depth="full")`、任务证据、pre-edit guard、`mc_admin(action="contract_gate")` 和 release-gate 统一使用契约语义报告，包含 Feign 服务端方法/路径、MQ producer/consumer、DTO 消费者风险和受影响消费者。
+- 本地安装版本提升至 `3.9.0`。
+- `mc_lookup` 新增 `cross_shard_fusion`：融合主检索/服务分片命中，按证据键去重排序，校验 active/routed generation，并输出事实/推断/派生强度、置信度、契约结论和下一步动作。
+- 新增 Feign 目标解析、MQ producer/consumer 覆盖、DTO 审核提示，以及 `eval_cross_shard_fusion` Golden-like 门禁，覆盖服务选片、generation 一致性和可解释性。
+- 本地安装版本提升至 `3.8.0`。
+- 新增自动跨服务分片编排：未指定 project 的 MCP 查询会基于 Contract/Topology Shard 路由、按档位有界扩展 Feign 邻居，并行查询服务 JSON/SQLite 图分片；响应新增 generation 绑定的 `shard_route` 与 `shard_evidence`。
+- 新增 `eval_cross_shard_replay`，以不持久化原始查询的方式统计跨服务选片 P95、选片上限和证据覆盖率。
+- 本地安装版本提升至 `3.7.0`。
+- generation 从路由元数据升级为真实物理分片：每次 reindex 生成不可变服务 JSON、服务 SQLite 图、契约和拓扑快照，完成后才激活；partial reindex 采用 copy-on-write，仅重建受影响服务分片；显式 project 范围的 code/hybrid 查询优先读取服务分片并保留全局兼容回退。
+- watcher 的有界失效计划现在会合并提交后台 partial reindex；新增 generation 回滚、保留与默认 dry-run 的清理入口。
+- 本地安装版本提升至 `3.6.0`。
+- 新增 versioned index control plane：reindex 在 staging generation 内构建，完成图、检索与分片路由元数据后才激活；既有 reindex 返回结构和读模型保持兼容。状态新增 generation、分片路由和查询 P50/P95/P99 可观测性。
+- 新增有界变更失效计划，按 DTO、Feign、MQ、HTTP、配置和普通代码输出传播规则；watcher 的 dirty journal 记录对应失效依据。
+- `QueryPlanner` 收敛 `mc_start` / `mc_lookup` 的 fast/standard/deep 请求预算并记录性能账本；新增后台 reindex job、恢复中断 job 的状态机，以及管理入口。
+- 任务空间新增与 evidence refs 关联的 ADR 决策记录；证据 GC 默认 dry-run，需显式 `force=true` 才会清理未引用块。
+- 本地安装版本提升至 `3.5.29`。
+- 热刷新新增 `RefreshCoordinator`，按 workspace 协调多 Agent/多进程请求；文件内容哈希、generation 和子图替换在同一 SQLite 事务中提交，并对既有图关系执行有上限的一跳依赖闭包。
+- `mc_start` / `mc_lookup` 新增兼容的 `request_tier`；`mc_analyze` 新增显式后台 job、状态读取和取消入口，默认同步行为不变。
+- 任务空间超大写入改存 SHA-256 内容寻址证据块，任务工件保留轻量引用，避免恢复、同步或交接读取完整大 payload。
+- 热刷新摘要支持压实 generation snapshot，状态面可观测最近压实信息。
+- 本地安装版本提升至 `3.5.28`。
+- Workbench/status 现在显示 `hot_refresh` 的 manifest 文件数和 dirty journal 状态；dirty journal 达到阈值会自动按路径压实，只保留最新事件，不影响正式索引。
+- 热刷新新增文件版本 manifest 与 dirty journal；watcher 只登记去抖后的变更，相关请求再消费这些路径。文件子图替换改为 SQLite 单事务，并重建声明、注入和方法调用出边，同时保留未变文件的调用入边。
+- `mc_start` 和 `mc_lookup` 现在会在主检索前自动检查有限数量的相关源码；检测到源文件比索引更新时，仅刷新对应 File/Class/Method 图谱覆盖层，不读取或合并全量 Java/semantic 索引。响应增加 `auto_refresh`，显示检查数量、刷新文件数量、耗时与模式。
+- `mc_start` 复用首次 sniff 结果，不再因自动同步重复执行同一检索；sniff 返回阶段耗时、缓存命中、检索路径与软时限状态，便于 Agent 判断是否需要补充更精确的入口。
+- reindex 写入轻量 `index-summary.json`；Workbench/状态查询只读取该摘要，不再为计数加载完整 Java/semantic 索引。紧凑输出的 token 节省统计默认关闭，仅在 `MEMORY_CENTER_MEASURE_COMPACT_GAIN=1` 时启用。
+- 任务工件写入、摘要历史与 change-log 压缩新增容量门禁，避免直接写入路径重新读取或拼接超大 Markdown。
+- 修复大型 workspace 的正常链路分析可能长时间占用 CPU/内存的问题：`Class#method` 全链路请求现在直接走 walkthrough，跳过不必要的 sniff；sniff 候选文件改为优先使用 graph FTS，code-search/sniff 不再按文件序列化完整 Java 符号、调用和 DTO payload。
+- 任务空间解析、健康检查、恢复摘要和自动同步改为有界读取任务工件；超过阈值的工件会在 health 中告警，并在自动同步时保持原样跳过，避免 GB 级 Markdown 被全文读入或拼接。
+- 本地安装版本提升至 `3.5.23`。
+- reindex 现在使用 workspace 级 `reindex.lock` 串行化完整索引写入；并发请求会返回可处理的 conflict 和 `--lock-timeout` 建议，不再直接暴露 SQLite 锁错误。`workspace_status` 与 Workbench Health 会显示运行中、成功、失败或中断的重建状态。
+- 新增 `release-gate`：一次执行全量 reindex、重复检索冒烟检查以及可选 Golden、Java 调用解析、parser precision 检查，输出统一发布结论。它支持保存/比较 portable baseline；baseline 仅保存耗时、数量、质量分和状态，不保存私有 query、路径、case 或 payload。
+- 修复 `release-gate` 会把 parser precision 的 `low` 状态误判为通过的问题；现在仅 `high` / `medium` 可通过，且失败门禁不会写入 baseline。
+- Workbench Health 新增 Benchmark & Gate Summary；HTTP `/workspace/quality-gates-summary` 统一提供 benchmark score、regression alerts、replay campaign 与 Java unresolved-call 指标。接口仅返回状态、指标、分类和建议，不暴露私有路径、源码片段或服务名。
+- Workbench Query 新增 walkthrough 模式、`summary / standard / deep` 报告档位、结构化 quick conclusion / main chain / risks / next actions、质量评估与导出动作；导出反馈同时显示当前 gate snapshot，原始响应收进可展开 evidence 区。
+- 新增 Java 未解析调用分类报告：CLI `eval-java-call-resolution-unresolved`、HTTP `/workspace/eval-java-call-resolution-unresolved` 和 MCP `mc_admin(action="eval_java_call_resolution_unresolved")` 按 `unresolved_reason` 汇总 `CALLS_METHOD`，输出脱敏逻辑锚点样本和下一步建议，避免盲目扩大 resolver fallback。
+- 新增 `eval-agent-guidance-replay-campaign`：检查真实 replay 的事件量与意图覆盖；它只读，不会把工具采纳误写成检索正确性反馈或自动修改 retrieval 权重。
+
+- Hybrid query 与 auto-routed walkthrough 新增兼容字段 `agent_next_steps`，把 retrieval policy、freshness、completion status 和现有证据收敛成结构化下一步建议。
+- `agent_next_steps` 会明确提示 Agent 读取现有 `read_targets`、切换到 walkthrough、验证 semantic 命中、细化查询或先处理 stale/pending 证据，减少重复全局搜索。
+- MCP `mc_lookup` 在自动路由和直接 query/symbol/code/context/chain/trace 路由下会把 `agent_next_steps` 提升到顶层；Golden agent guidance 门禁现在也会检查 `agent_next_steps` 中的低效搜索建议。
+- CLI `memory-center query`、HTTP `/workspace/query` 与 core `memory_query_hybrid` 已补三入口可见性回归测试，确保查询入口都能返回结构化 `agent_next_steps`。
+- Golden Benchmark summary 现在会汇总 `agent_next_step_count` 与 `agent_next_step_action_counts`，报告层可直接看到下一步建议覆盖率和动作分布。
+- Golden performance baseline / compare 现在会保存并比较 `agent_next_steps` 覆盖率、低效搜索建议数量和 reduction rate；即使 latency/token 没退化，Agent 下一步建议质量退化也会让 gate 失败。
+- 新增 `memory_eval_agent_guidance` / `eval-agent-guidance` / `/workspace/eval-agent-guidance` / `mc_admin(action="eval_agent_guidance")`，日常 health、regression suite 与 workspace dashboard 现在也能看到 `agent_next_steps` 覆盖率和低效搜索建议风险。
+- 新增 `memory_eval_agent_guidance_adoption` / `eval-agent-guidance-adoption` / `/workspace/eval-agent-guidance-adoption` / `mc_admin(action="eval_agent_guidance_adoption")`，可基于 `agent_guidance` session event 与后续 `tool_call` 判断建议是否真的被执行。
+- CLI `memory-center query --session-id ...`、HTTP `/workspace/query?session_id=...` 与 MCP `mc_lookup(session_id=...)` 现在会自动把返回的 `agent_next_steps` 记录为 `agent_guidance` session event，adoption 指标不再依赖手工记录。
+- 新增 `agent-guidance-adoption-trends.jsonl`、`eval-agent-guidance-adoption-trend`、`/workspace/eval-agent-guidance-adoption-trend` 与 `mc_admin(action="eval_agent_guidance_adoption_trend")`，Benchmark trend report / regression alerts 现在能发现 adoption rate 下降。
+- Adoption 趋势点新增 `missed_action_counts`；当最新退化趋势显示某个 action 反复未被执行时，后续 query 的 `agent_next_steps` 会保留 action 并附加 `adoption_feedback`、提升 priority、强化 command。
+- 新增 `memory_eval_agent_guidance_replay` / `eval-agent-guidance-replay` / `/workspace/eval-agent-guidance-replay` / `mc_admin(action="eval_agent_guidance_replay")`，可回放真实 session event 并把建议执行结果分类为 `adopted`、`missed`、`bypassed` 或 `unobservable`。
+- 新增 `agent-guidance-replay-trends.jsonl`、`eval-agent-guidance-replay-trend`、`/workspace/eval-agent-guidance-replay-trend` 与 `mc_admin(action="eval_agent_guidance_replay_trend")`，Benchmark trend report / regression alerts 现在能发现 replay adoption rate 下降、绕过率升高和不可观测率升高。
+- Replay 趋势点新增 query-time 反哺：当最新退化趋势显示本地搜索绕过、不可观测、缺 target 或动作不匹配时，后续 `agent_next_steps` 会附加 `replay_feedback`，并强化 command、`session_id`、`target_ref/read_targets` 或 Memory Center mode。
+- 新增 `agent-guidance-trends.jsonl`、`eval-agent-guidance-trend`、`/workspace/eval-agent-guidance-trend` 与 `mc_admin(action="eval_agent_guidance_trend")`，Benchmark trend report / regression alerts 现在能发现 `agent_next_steps` 覆盖率下降或无效泛搜索建议回潮。
+- 修复 replay 回放把“先本地搜索绕过、后补做匹配工具”误记为 adopted 的问题；现在按后续工具事件顺序判定。
+- 修复本地搜索检测会因 payload 文本子串（例如 `application` 中的 `cat`）误报 bypass 的问题；现在只检查结构化工具名和 shell 命令入口。
+- 方法级 `switch_to_walkthrough` 建议现在保留 `target_ref` 和 `read_targets`，缺目标反馈可直接执行。
+- 修复 core / CLI / HTTP 直接调用 method walkthrough 时遗漏顶层 `read_targets` 的问题；现在与 MCP facade 复用同一份主链路文件目标。
+- Java 调用解析现在可依据本地字段与 Lombok `@Data` / `@Getter` / `@Setter` / `@Value` 解析生成的访问器，并在低置信度调用元数据中标记未解析原因，便于真实工作空间继续分层治理。
+- 修复 Java regex supplement 忽略 package-private 方法的问题；这类方法的参数和局部变量类型现在可进入调用解析，避免把可确定的同包调用误标为 `receiver_type_missing`。
+- Java 调用解析 benchmark case 新增 `allowed_targets` / `forbidden_targets`；CLI、HTTP、MCP 可选择对禁止的高置信边启用严格失败门禁，避免把合法同方法旁路误判为误绑定。
+- 新增 Java 调用解析审阅报告：CLI `eval-java-call-resolution-review`、HTTP `/workspace/eval-java-call-resolution-review`、MCP `eval_java_call_resolution_review` 会对未分类高置信边按逻辑锚点聚合去重，并给出回写 case 契约的下一步。
+- Golden Benchmark case 现支持 `impact`、`context` 模式和可选 `project` 范围，可为全链路、影响分析、架构理解三类真实检索意图建立带禁止锚点的统一回归门禁。
+- 公开 Golden case 模板补充 impact / context 示例，展示同名跨模块时的 `project` 约束和禁止锚点写法。
+- 新增 `eval-golden-baseline-save`，可在本地保存不含 case、路径和 payload 的 portable Golden 性能基线，供后续 `eval-golden --baseline` 做回归比较。
+- 本地安装版本提升至 `3.5.22`。
+- 修复 `parser-status` 的 Tree-sitter 安装提示仍指向旧版依赖范围的问题；提示现在与 `ast` extra 的 `tree-sitter>=0.25,<0.26`、`tree-sitter-java>=0.23,<0.24` 保持一致。
+- 本地安装版本提升至 `3.5.21`。
+
+### Task Space Resume Experience / 任务空间接手体验
+
+- 新增任务空间健康检查与只读修复计划，可通过 CLI 与 MCP `mc_admin` 检查 `current_summary`、next actions、write receipts、相似任务空间等问题。
+- `resume-packet` 现在携带轻量 `task_health` 与 `repair_plan_hint`，Agent 接手时可直接判断是否需要先修复记忆空间。
+- 新增 `work-resume-check` / `mc_admin(action="task_resume_check")` / `/workspace/work-resume-check` 一键接手检查入口，聚合恢复包、健康摘要、修复计划、下一步动作和近期证据。
+- 新增 `artifact repair-task` / `mc_admin(action="task_repair_apply")` 保守修复执行入口，默认 dry-run，显式 apply 时只执行低风险 task space 修复。
+- 本地安装版本提升至 `3.5.19`。
+
+### Parent Workspace MCP Adoption Fix / 父级 Workspace MCP 采纳修复
+
+- 修复聚合 workspace 位于子项目上一层时，Agent 在子项目目录里较容易忽略 Memory Center MCP 的问题。
+- `memory-center init` / `memory-center reindex` 现在会把受管说明块镜像写入每个已配置 service root 的 `AGENTS.md`、`CLAUDE.md`、`GEMINI.md`、`.github/copilot-instructions.md` 与 `.cursor/rules/memory-center.mdc`。
+- `memory-center init` / `memory-center reindex` 现在也会把 `memory-center` MCP server 绑定写入聚合根目录和每个 service root 的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`。
+- 新增 `memory-center setup-agent --workspace <workspace.yaml>` 一键接入命令，统一刷新说明、Hooks、MCP 绑定并输出宿主重启建议。
+- `memory-center runtime-audit --workspace <workspace.yaml> --fix` 现在会检查并刷新这些绑定，用于自动修复子项目里看不到 `mc_*` 工具的问题。
+- MCP server 新增 `memory-center://startup-diagnostics` resource，启动后可查看 workspace 解析、MCP 绑定状态和修复建议。
+- `memory_query_hybrid`、`memory_search_code`、`memory_method_walkthrough` 未显式传 `project` 时会优先使用当前子项目；当前子项目无命中时自动回退全局。
+- 子项目级说明会显式写明应复用上层 `.memory-center/workspace.yaml`，并在 MCP 缺失时提示检查本地绑定，降低“当前仓库没有本地 workspace 就不调用 MCP”的概率。
+- `memory-center-mcp` 的运行时依赖现在随默认安装一起安装，不再需要额外 `pipx inject memory-center "mcp>=1.2.0"`。
+- 本地安装版本提升至 `3.5.18`。
+
+### Documentation Status Cleanup / 文档状态收口
+
+- 新增 `docs/DOCS_STATUS.md`，明确 active docs 与 historical docs 的边界。
+- 新增 `docs/README.md` 作为 `docs/` 目录导航首页，按用途组织主文档、补充说明、benchmark 与历史文档入口。
+- README 不再把旧路线图、旧执行计划和旧执行日志当成默认阅读入口，而是统一指向当前主文档集合。
+- 历史规划与执行文档已集中归档到 `docs/archive/`，并保留历史文档提示，减少把旧计划误读为当前状态的风险。
+
+### 3.5.14 Documentation Refresh / 架构文档刷新
+
+- 重写 `docs/ARCHITECTURE.md` 为面向外部评审者、集成方和维护者的独立当前架构说明。
+- 新增目录、系统定位、读者视角、核心能力域、部署形态、代码目录视图、分层契约和更完整的数据流说明。
+- 移除旧式推荐阅读、维护地图、路线图和 backlog 口径，避免架构说明与计划文档混杂。
+
+### P1 Java Call Resolver Self-Loop Fix / Java 调用解析自环修复
+
+- 真实工作区上发现大量 `CALLS_METHOD` self-loop 假边
+  (`Service:m -> Service:m`),根因是 `RegexJavaParser` 把抽象 interface
+  方法声明也当成 method body。bare-call 正则在 `start..end` 内匹配到方法
+  自身签名,被 `_same_class_candidates` 解析成 self-call。
+- 修复:`_parse_interface_methods` 给抽象方法 span 加 `is_declaration=True`
+  标记;`_parse_method_calls` 跳过 declaration-only span。
+- 真实工作区效果:self-loop CALLS_METHOD 假边大幅减少
+  (-94%,残留 795 条是真实递归调用如 `RedisServiceImpl:hSet` 重载 dispatch);
+  CALLS_METHOD 总量明显下降(消除的均为假边);
+  same_class resolution_level 边同步下降(全部去掉的都是 self-loop)。
+- Java call resolution gate (15 cases) 保持全过;不影响合法 same_class
+  fluent chain (`ServiceImpl#download -> ServiceImpl#buildObjectKey`)。
+- 新增 `tests/test_p1_call_resolution_and_vector_gate.py` 锁住 interface
+  自环不重现、default 方法体仍正常抽取调用。
+
+### P1 Java Call Resolution Cases Expansion / 调用解析 case 扩充
+
+- `golden/java-call-resolution-openapi.yaml` 从 15 个 case 扩到 **26 个**,
+  覆盖 5 类真实路径:
+  - Controller -> ServiceImpl(直接 DI Impl 注入)
+  - Controller -> Service interface(多态 dispatch,3 个 case)
+  - ServiceImpl -> Mapper / Dao(3 个 case)
+  - ServiceImpl same-class private helper(2 个 case)
+  - static_import call (Util / Helper,2 个 case)
+- 全 26 个 case 通过:`edge_recall=1.0` / `high_confidence_expected_rate=1.0` /
+  `resolution_level_rate=1.0` / `unresolved_rate=0.0`。
+- `java-call-resolution-baseline.json` 同步更新为新基线
+  (`case_count: 26`, `unexpected_high_confidence_edge_count: 42`)。
+
+### P1.5 Vector Gate / 向量召回长期门禁
+
+- `GoldenCase` schema 新增可选字段 `enable_vector`(默认 False),让概念
+  query 类型 case 可以显式声明走 ANN 路径。`memory_query_hybrid` 在
+  hybrid mode 下读取此字段并传给 retrieval policy。
+- `golden/cases.yaml` 新增两个 vector-aware case，把向量验证基准记录
+  （内部资料，不随公开仓库发布）中的收益锁进 long-term gate:
+  - `vector-feign-auth-interceptor`("Feign 调用的鉴权拦截器" ->
+    `FeignConfig#feignDecoder` + `FeignSpringFormConfiguration#feignContract` + ...)
+  - `vector-kafka-consumer-handler`("Kafka 消费者解析消息" ->
+    `KafkaOneConfig#kafkaOneContainerFactory` + `KafkaTwoConfig#kafkaTwoContainerFactory`)
+- 真实工作区效果:golden anchor_recall 0.6444 -> 0.8667(vector 命中
+  方法级 anchor 提升 recall)。
+- `_sync_retrieval_indexes` 修复:reindex 在 sparse backend 下不再清空
+  之前 ST run 留下的 `VectorIndex` 嵌入。原行为会导致任意一次
+  `memory-center reindex`(没传 `MEMORY_CENTER_SEMANTIC_BACKEND`)悄悄
+  把 dense vectors 抹掉。新行为:`dense_items` 为空时保留现有 VectorIndex。
+- Vector 增量同步完成真实验证:partial semantic rebuild 只重 encode 1 个
+  changed dense candidate;VectorIndex `vector_sync_mode=partial`,只 delete/upsert
+  该 changed node,embedding_count 保持不变。当前 partial sync 仍耗时 ~23s,
+  主因是 BM25 仍全量 rebuild,后续可作为 P2 性能项单独优化。
+
+### Vector Retrieval Real Validation / 向量检索真实场景验证
+
+- 新增向量验证基准记录（内部资料，不随公开仓库发布）:
+  在真实工作区
+  上端到端验证 `MEMORY_CENTER_SEMANTIC_BACKEND=sentence-transformers`
+  + `selective` scope + ANN retrieval 全流程。`vector_status: ready`,
+  query "Feign 鉴权拦截器" elapsed 13.2s -> 2.8s(-78%),top1 命中从
+  file 级升级为 method 级语义命中(`vector_ann + sparse_bm25 + semantic`)。
+- `retrieval_diagnostics.policy` 同时暴露 `vector_enabled`(policy
+  实际选择)与 `enable_vector` / `enable_sparse_bm25` / `enable_semantic`
+  (user 请求),让宿主能解释"开了 vector 却没用"或"自动 policy
+  选择 vector"等情况。
+- 默认仍是 `sparse` backend;`sentence-transformers` / `sqlite-vec`
+  保持 optional 依赖,384 维 numpy brute_force 已经 sub-100ms,
+  当前规模不需要额外向量数据库。
+
+### Vector Observability / 向量可观测性
+
+- reindex 汇总新增 `semantic_backend`、`requested_semantic_backend`、
+  `semantic_model`、`requested_semantic_model`、`vector_scope`、
+  `vector_candidate_count`、`dense_doc_count`、`vector_status`、
+  `vector_disabled_reason`。当 `vector_embeddings=0` 时可直接判断是
+  sparse backend 未开启、`sentence-transformers`/模型不可用、scope 无候选，
+  还是 dense vector 已生成但未同步。
+- `semantic_index_stats()` 同步返回上述状态字段，并保留原有
+  `backend` / `requested_backend` 字段，兼容现有调用。
+- English summary: reindex and semantic stats now explain vector readiness
+  instead of only reporting `vector_embeddings=0`.
+
+### P0 Index Hot Path / 索引热路径修复
+
+- 新增索引热路径设计记录（内部资料，不随公开仓库发布）:
+  P0-0 CBM 参考对齐后的索引热路径设计,锁定三个修复的共享契约(MCP /
+  CLI / HTTP schema 零变化、parser 行为可观测可回滚、`RegexJavaParser`
+  保留为 fallback / differential oracle、真实工作区 reindex 不慢于基线)。
+- `JavaSymbol.to_dict()` 手写浅拷贝;`core.models.to_dict` 优先调用
+  对象自带 `to_dict`,回退 `dataclasses.asdict`。输出键集合、键序、
+  值与 `asdict` 完全一致;本地微基准提速 ~97x。
+- 新增 `memory_center/core/storage/metadata.py`:`metadata_json` 在
+  metadata 为空/`None` 时直接返回字面量 `'{}'`,非空才走 `json.dumps`。
+  `GraphStore.rebuild` / `bulk_write` / `partial_rebuild` /
+  `_upsert_search_rows` 以及 `retrieval/inverted.py`、`semantic.py`
+  全部统一调用。空 metadata 路径本地微基准提速 ~19x。
+- `TreeSitterJavaParser.parse` 不再默认全量执行 `RegexJavaParser.parse`:
+  tree-sitter 成功路径改为调用新的 `RegexJavaParser.parse_supplements`,
+  只补抽 `constants` / `method_variable_types` / `bean_injections` /
+  `method_calls` / `dto_field_usages` / `config_usages` / `data_resources`,
+  跳过 tree-sitter 已覆盖的结构性扫描。`MEMORY_CENTER_PARSER_FULL_DUAL=1`
+  可一键回退到旧的“双轨全量 + merge”行为。`TreeSitterJavaParser.diagnostics`
+  新增 `supplement_call_count`、`full_regex_fallback_count`、`full_dual_mode`
+  三个计数。
+- 在 `examples/spring-cloud-demo` 全量 Java 文件与代表性 Spring
+  Controller / Feign / Kafka 样例上,supplements 路径与 legacy
+  full-dual 路径 `JavaParseResult` 字段完全一致;新增
+  `tests/test_p0_index_hot_path.py` 锁住这条契约。
+- 同步修补 tree-sitter `_walk`,正确识别 `@interface`
+  (`annotation_type_declaration` / `annotation_type_element_declaration`)、
+  interface 内常量(`constant_declaration`)、wildcard / static imports,
+  使 tree-sitter 节点覆盖与 legacy regex 一致或更准。
+- 真实工作区验收(2026-06-24):
+  Java call resolution gate edge_recall/high_confidence_rate/resolution_level
+  全部 1.0、unresolved 0.0;Golden suite edge_recall=1.0、forbidden_hit=0.0、
+  performance_gate=pass、anchor_recall 0.8286 与 legacy 持平;Doctor 53
+  checks 0 fail;Walkthrough state=complete 5 层全部命中;Reindex 一次
+  冷启动 140.6s → 139.0s(wall-clock 持平,IO 抖动主导),graph
+  节点/边覆盖更全(比 legacy 略多,因为
+  tree-sitter 节点覆盖更全 + fast 路径跳过了 SQL 字符串里的 false
+  positive)。详情见索引热路径设计记录 §5（内部资料，不随公开仓库发布）。
+- `tests/test_parser_differential.py`、
+  `tests/test_java_call_resolution_benchmark.py`、
+  `tests/test_golden_benchmark.py`、`tests/test_graph_rebuild_perf.py`、
+  `tests/test_benchmark_workspace_perf.py` 全绿;`pytest -q` 1496 用例
+  无失败。
+
+### Java Call Resolution Gate / Java 调用解析真实门禁
+
+- 新增 `memory-center eval-java-call-resolution`，基于 graph 中的
+  `CALLS_METHOD` 边评测 Java 调用解析的 expected-edge recall、
+  high-confidence expected rate、resolution-level 命中率和 unresolved rate。
+- 新增 HTTP `/workspace/eval-java-call-resolution` 与 MCP
+  `mc_admin(action="eval_java_call_resolution", name="<cases.yaml>")` 入口。
+- cases 文件只允许 `Class#method` 这类逻辑锚点，不允许文件系统路径；
+  真实私有工作区样例保存在本地 workspace `.memory-center/golden/`，不提交。
+- English summary: adds a real-workspace Java CALLS_METHOD precision gate with
+  logical anchors only, so resolver improvements can be compared against
+  private scenarios without committing private paths or generated indexes.
+
+### 3.5.10: Java Call Resolver / Java 调用解析器
+
+- 新增 `memory_center/core/indexing/java_call_resolver.py`，基于全工程
+  `JavaClassIndex` 将 Java `method_calls` 解析为单一最佳目标，支持
+  same-class / same-package / explicit import / wildcard import /
+  static import / overload evidence。
+- `RegexJavaParser` 现在保留 `import static`，并为方法调用记录裸调用与
+  `arg_count`，让 resolver 能处理 `normalize(...)` 这类静态导入调用和
+  重载签名匹配。
+- `build_graph_store` 写入 `CALLS_METHOD` 时使用 resolver 结果，边上记录
+  `resolution_level`、`target_fqcn`、`matched_signature`、`inferred_target`
+  等元数据；无法解析的调用保留为 `confidence=0.3` 的 inferred target，
+  不再误连到随机同名真实方法。
+- `memory_callers` / `memory_callees` 默认优先过滤 `confidence >= 0.85`；
+  若高置信结果为空会自动降级返回低置信边并标注 `confidence_filter`。
+  CLI / HTTP 增加 `min_confidence` 参数，传 `0` 可主动查看 unresolved /
+  wildcard 等低置信边。
+- 修正 chain 去重粒度：类名前缀不同的 `InvoiceService.create` 与
+  `MissingService.create` 不再被短方法名 `create` 合并。
+- 本地安装版本提升至 `3.5.10`。本次 review 额外修复裸调用抽取噪音：
+  `new Foo(...)` 不再被误记为 `Foo()` 方法调用。
+- English summary: P1-1 adds a Java call resolver that upgrades method-name
+  matching into confidence-scored CALLS_METHOD edges using same-class,
+  same-package, import, wildcard import, and static import evidence.
+  Unresolved calls remain visible as low-confidence inferred targets instead
+  of being bound to unrelated same-name methods.
+
+### CBM-Inspired Evolution P1-0: Java Parsing Hot-Path Profile / Java 解析瓶颈定位
+
+- 新增 `memory_center/core/perf/` 模块:`profile_reindex` 用 cProfile
+  包裹完整 reindex,产出 `.prof` 文件 + 人类可读 top-N 表;
+  `aggregate_by_module` 把函数级数据滚动到模块级,便于诊断"哪个子系统
+  最热"。
+- 新增 CLI `memory-center bench-profile --workspace <yaml>`,默认 top 50
+  按 cumulative 排序,支持 `--by-module` 滚动 / `--label` 给 `.prof`
+  文件起名 / `--sort-by` 切换排序键。
+- 在真实工作区上跑出第一份诊断报告（内部资料，不随公开仓库发布）。
+  原始 pstats 由 `bench-profile` 本地生成到工作区 `.memory-center/perf-profiles/`,
+  不提交到仓库。识别出三个真实瓶颈:
+  - **Java parser 双轨开销 ~58s**:`TreeSitterJavaParser.parse` 即使
+    tree-sitter 成功也仍然全量跑一遍 `RegexJavaParser`(~44% 总耗时)
+  - **`dataclasses.asdict` 调用爆炸 ~20.8s**:大量 JavaSymbol 触发海量
+    `_asdict_inner` 递归
+  - **`json.dumps` 调用次数过多 ~14.2s**:graph metadata 序列化开销过大
+- 3 个新测试覆盖 profile 输出契约(pstats 文件被写、top_n 影响 summary
+  长度、模块 rollup 按 cumulative 降序)。全量套件零回归。
+- English summary: P1-0 introduces a cProfile-based reindex profiler
+  (CLI: `bench-profile`) and produces the first hot-path report on a
+  real Java monorepo. The 71% non-SQLite bucket flagged by P0's
+  benchmark turns out to be dominated by three concrete Python-level
+  issues (dual-track parsing, asdict recursion, json metadata
+  serialization), not by tree-sitter itself. Together these account
+  for ~50-90s of saveable time, leading to a new P1-0.5 stage for
+  targeted optimization before the planned P1-1 call resolver work.
+
+### CBM-Inspired Evolution P0-2: Multi-Language Structural Indexing / 多语言结构索引
+
+- 新增 `memory_center/core/indexing/parse_result.py` 定义跨语言通用结构:
+  `SymbolSpan` / `CallSite` / `StructuralParseResult`(轻量,4 个核心字段)。
+  Java 现有 `JavaParseResult` (23 字段,含 Spring 专属注解/Bean 注入等)保留,
+  两条路径并行不冲突。
+- 新增 `memory_center/core/indexing/language_registry.py`,注册 7 种语言:
+  java / kotlin / python / typescript / tsx / javascript / go。每个 spec 记录
+  tree-sitter binding 包名 + Language attribute + pip extra 名,`load_language`
+  按需懒加载。
+- 新增 `memory_center/core/indexing/structural_parser.py` 实现
+  `TreeSitterStructuralParser`,每种语言独立 walker:Java/Python/Go/TS/Kotlin
+  各自处理 class / function / import / call。Qualified name 由声明栈累积,
+  receiver 文本单独抽出供 P1-1 解析器使用。
+- 新增 `memory_center/core/indexing/multilang_indexer.py` 作为 indexer 主流程
+  的薄粘合层:`is_structurally_indexable` 决定文件是否走 multilang 通路(Java
+  排除以避免与 Spring 专属抽取双写),`parse_structural` 缓存 parser 实例,
+  `emit_graph_elements` 把结构化结果翻译成 Module / Class / Function 节点
+  + DEFINES / IMPORTS / CALLS 边,沿用 Java 路径的 `node_id` / `edge_id` 约定。
+  CALLS 边初始 confidence=0.3 + `resolution_level=unresolved`,待 P1-1 解析器
+  改写。
+- `indexer.reindex_workspace` 在 Java 收尾后追加多语言结构 pass,partial
+  reindex 的 `--project` / `--path` 过滤继续生效。
+- `pyproject.toml` 引入 `multilang` extra(tree-sitter 0.25 + java/python/
+  typescript/go/kotlin 五个 binding,版本 pin 到下一 minor 防漂)。`all` extra
+  同步扩展。`ast` extra 升级到 0.25 系列。
+- 端到端验证:对一个含 `pyproject.toml` 的 Python 微服务跑 `init --detect`
+  +`reindex`,图谱产出 Module/Class/Function 节点 + DEFINES/IMPORTS/CALLS 边,
+  与 Spring 索引并存。
+- 47 个新测试通过(30 registry + 7 structural + 10 multilang glue),全量
+  套件零回归。
+- English summary: P0-2 lifts the indexer from "Java only" to a 7-language
+  structural index (Java/Kotlin/Python/TypeScript/TSX/JavaScript/Go). The
+  Spring-aware Java pipeline is untouched; non-Java files now flow through
+  a generic tree-sitter walker that emits Module/Class/Function nodes and
+  DEFINES/IMPORTS/CALLS edges. Call edges are intentionally left at low
+  confidence with ``resolution_level=unresolved`` so P1-1's resolver can
+  rewrite them in place without breaking any downstream consumer.
+
+### CBM-Inspired Evolution P0-3: SQLite Indexing Performance / SQLite 索引性能
+
+- 新增 `memory_center/core/storage/pragmas.py` 作为 SQLite PRAGMA 单一
+  来源:`DEFAULT_PROFILE`(WAL / NORMAL / 200 MB cache / MEMORY temp_store /
+  256 MB mmap / FK on)+ `FAST_WRITE_PROFILE`(synchronous=OFF)+
+  `apply_pragmas` / `read_pragma_state` / `fast_write_mode` helper。
+- 修复 `GraphStore.connect` / `MemoryBackendStore.connect` 之前完全
+  没有应用 PRAGMA 的隐藏 bug(只有 `SQLitePool` 配过,且 cache 仅 64MB)。
+  现在三处全部走 `apply_pragmas`,确保 reindex 主写库路径也走 WAL +
+  大缓存 + 内存 temp store + mmap。
+- `GraphStore.rebuild` / `rebuild_search_index` 从"逐条 INSERT 循环"
+  改为 `executemany` + `fast_write_mode` 包裹。⚠️ **实测校准**:在真实工作区上 reindex wall-clock **无显著变化**
+  (`graph.rebuild` 仅占总耗时 18.7%,Java 解析占 ~71%);完整数据见
+  docs/benchmarks 下的真实工作区基准报告。
+- `estimate_optimal_workers` 重新调参以适配 IO-bound 文件读取:上限
+  从 8 → 32,小批量(≤4 文件)走 serial,中等批量按 `min(cpu*2, max, n)`
+  并保底 2 worker。修正了"<10 文件返回 0 workers 导致悄悄退化为单线程"
+  的旧 bug。
+- `doctor` 输出新增 `sqlite_pragmas` 段和 `graph:pragma_wal` 检查项,
+  方便用户一眼看出连接是否被正确调优。
+- 21 个新测试覆盖 PRAGMA 默认值 / 幂等 / fast_write_mode 进出异常恢复 /
+  store inheritance / rebuild 持久化与重置 / FTS / worker 数量边界。
+  全量套件零回归。
+- English summary: a hidden bug — GraphStore and MemoryBackendStore
+  were opening bare SQLite connections without any PRAGMA tuning —
+  dominated reindex latency on real monorepos. P0-3 unifies PRAGMA
+  configuration across every store, switches the bulk reindex rewrite
+  to executemany + synchronous=OFF, and modernizes the parallel
+  parser's worker-count heuristic for today's IO-bound workload.
+
+### CBM-Inspired Evolution P0-1: Service Kind Registry / 服务类型注册表
+
+- 新增 `memory_center/core/service_kinds.py`,统一管理服务类型(11 种):
+  `spring-cloud-gateway` / `spring-boot-service` / `spring-boot-task` /
+  `shared-library` / `generic-jvm` / `kotlin-module` / `python-package` /
+  `node-app` / `go-module` / `rust-crate` / `generic`。
+- `ServiceConfig` 增加可选 `language` 字段及 `resolved_language()` 助手;
+  默认 `type="spring-boot-service"` 保留,旧 workspace.yaml 零变更。
+- `memory-center init` 默认开启自动探测(`--detect`,可用 `--no-detect`
+  回退到旧 Spring 模板;`--dry-run` 仅预览不写文件),按子目录构建标记
+  匹配 kind,并对 `*-api` / `*-common` / `*-core` 命名自动加 contract /
+  common 标签。
+- 真实验证:对参考开源项目跑 `init --dry-run` 不再写入
+  3 个虚假 Spring service,只识别 `graph-ui` (`node-app`)。
+- 新增长期演进计划 `docs/archive/CBM_INSPIRED_EVOLUTION_PLAN.md`,记录 P0/P1/
+  P2/P3 各阶段从参考开源项目学到的设计借鉴(多语言 parser、
+  RAM-first 索引、跨服务边抽象、团队共享 graph artifact 等)。
+- English summary: introduced a service kind registry that decouples
+  memory-center from the Spring-only assumption (11 kinds across JVM /
+  Kotlin / Python / Node / Go / Rust / generic). `init` now auto-detects
+  service types per submodule, falls back gracefully on unrecognized
+  repos, and exposes `--dry-run` / `--no-detect` for explicit control.
+
+### Next: Ruff Modernization and Real Precision Gates / Ruff 现代化与真实精度门禁
+
+- Ruff 现代化分层收口继续推进：批量清理 `UP006/UP035/UP037/UP045/UP031/UP007`，并手工判断修复剩余 `B007/B905` 语义项。
+- CLI Typer 命令签名保留 `typing.List/Optional` 兼容写法，避免 Python 3.9 运行时求值 `list[str] | None` 失败；普通 core 模块继续保留现代类型写法。
+- Parser 精度诊断新增 `parser_precision`：reindex、graph summary、retrieval diagnostics、reasoning diagnostics 均可显式返回 `regex_only/mixed_fallback/native_ready` 状态和下一步建议。
+- 新增 `parser-status` CLI，直接输出 tree-sitter Java 启用状态、pipx/local/editable 安装命令和 parser benchmark 验证命令。
+- Golden Benchmark 新增 portable coverage summary；真实场景脚本现在输出 case mode 分布、anchor/edge 覆盖和建议补齐方向。
+- `workspace_next_actions` 保留兼容的字符串 `actions`，同时新增证据化 `action_items`，每条包含 action、reason、evidence、command、priority。
+- 热路径索引读取改为文件快读 + backend fallback，并保留 `read_json_observed()` 做显式一致性双读；真实工作区 walkthrough latency 从 3.5.7 基线 `2433.243ms` 降到本次验收 `313.382ms`。
+- 真实工作区回归通过：tree-sitter active reindex `fallback_count=0`、`critical_disagreement_count=0`；私有 Golden 扩展到 7 条，覆盖 walkthrough / hybrid / MQ / config，anchor recall `1.0`、edge recall `1.0`、forbidden hit rate `0.0`，完整链路 `completion_status=complete`。
+
+English summary: the next release continues Ruff modernization, makes parser precision visible across indexing/retrieval/reasoning, preserves Typer compatibility on Python 3.9, and improves real-workspace walkthrough latency while passing the no-regression Golden gate.
+
+### 3.5.9: Ruff Governance Baseline / Ruff 治理基线
+
+- 清理 legacy Ruff 运行级问题：`F/E9` 已通过，避免未使用导入、未定义名、重复导入等基础错误继续混入开发噪音。
+- 统一 import 排序：`I001` 已通过，后续 diff 更容易聚焦真实逻辑变化。
+- 修复 bugbear 风险项：`B006/B008/B904` 已通过，包含可变默认参数、Typer list 参数默认值和异常链处理。
+- 本地安装版本提升至 `3.5.9`，并继续通过真实场景验收脚本与 performance gate。
+- 下一步计划已统一收敛到内部开发路线文档：优先做 Java reindex 性能热点修复，其次推进 Java Parser / Call Resolver 真实精度深化，再继续 Retrieval / Reasoning 质量闭环与输出体验产品化。
+
+English summary: 3.5.9 establishes a practical Ruff governance baseline (`F/E9/I001/B006/B008/B904`) and documents the next staged cleanup and product-quality work.
+
+### 3.5.8: Real Baseline No-Regression Gate / 真实基线不回归门禁
+
+- Golden `performance_gate` 默认语义调整为“不低于当前真实基线”：token 默认不允许增加，latency 默认允许 `10%` 运行抖动；可通过参数继续设置更严格改善要求。
+- `scripts/verify_real_workspace.sh` 支持 `MEMORY_CENTER_REAL_BASELINE` 和 `MEMORY_CENTER_SAVE_REAL_BASELINE=1`，可把当前已验收真实工作区指标保存为后续性能基线。
+- 文档明确当前 `3.5.7` 真实工作区 Golden 可作为后续 baseline，后续版本不得低于该基线；基线保存在真实 workspace 本地，不提交私有指标文件。
+
+English summary: real-workspace Golden performance now uses a no-regression baseline by default, with an opt-in path to save the current validated run as the private baseline.
+
+### 3.5.7: Walkthrough Report Levels / 全链路输出视图分级
+
+- Method walkthrough `report_level` 新增正式三档视图：`summary`、`standard`、`deep`。
+- `summary` 只保留快速结论、主链路、证据文件编号、关键风险和下一步；`standard` 保持默认详细可读视图；`deep` 展开 glossary、rule groups、branch outline、anti-patterns 等深度诊断区块。
+- 旧 `brief` 保留为兼容别名并归一到 `summary`；结构化字段不删减，三档只改变 `answer_markdown` 展示详略。
+- 真实工作区场景验证三档共享同一 `summary_lines` 主链路，`completion_status=complete`。
+
+English summary: method walkthrough now supports summary, standard, and deep report levels without changing structured fields.
+
+### 3.5.6: Real-workspace Verification Script / 真实工作区验证脚本
+
+- 新增 `scripts/verify_real_workspace.sh`，作为后续本地验收默认入口，固定验证用户提供的真实工作区、私有 Golden cases 和关键全链路查询。
+- 脚本只输出 doctor、Golden summary/performance gate、walkthrough completion status 等摘要字段，不打印完整 payload、源码片段或完整文件路径。
+- 支持通过 `MEMORY_CENTER_REAL_WORKSPACE`、`MEMORY_CENTER_REAL_CASES`、`MEMORY_CENTER_REAL_QUERY`、`MEMORY_CENTER_REAL_PROJECT` 覆盖默认真实场景。
+
+English summary: a real-scenario verification script now runs doctor, Golden, and the key full-chain query against the user-provided workspace without dumping private payloads.
+
+### 3.5.5: Golden Performance Gate / Golden 性能门禁
+
+- Golden Benchmark 新增 `performance_gate`，支持传入可选性能 baseline，对 `median_latency_ms` 和 `token_estimate` 计算改善率。
+- CLI `eval-golden` 和 HTTP `/workspace/eval-golden` 新增兼容型可选 `baseline` 参数；不传 baseline 时返回 `baseline_missing` 和可保存的当前 baseline 快照，不伪造历史对比通过。
+- 新增 portable baseline 生成函数，只保留 summary/performance 指标，不包含 cases、payload、文件路径或源码内容。
+
+English summary: Golden Benchmark now has an optional performance gate for latency and token improvements. Missing historical baselines are reported explicitly with a portable current snapshot.
+
+### 3.5.4: Golden Agent Guidance Gate / Golden Agent 建议门禁
+
+- Golden Benchmark 新增 `agent_guidance` 指标，统计完整链路结果中是否仍存在鼓励全局 `find/grep/rg --files/sed/IDEA search` 的无效搜索建议。
+- 新增 `agent_invalid_search_suggestion_count` 与 `agent_invalid_search_reduction_rate` 汇总门禁；Golden suite 通过条件现在要求无效搜索建议为 `0` 且下降率 `>= 50%`。
+- 反模式提示里的“不要 find/grep”“直接读 absolute_file_path”等否定式建议不会被误判为坏建议。
+- CLI、HTTP、MCP `eval_golden` 复用同一 `run_golden_suite` 输出，无需新增参数或破坏现有 schema。
+
+English summary: Golden Benchmark now gates agent-facing guidance, ensuring complete walkthroughs tell agents to use current evidence instead of restarting broad repository searches.
+
+### 3.5.3: Walkthrough Completion Status / 全链路完成状态
+
+- 新增 additive 顶层字段 `completion_status`，用于标记 method walkthrough / full-chain query 当前证据是否 `complete`、`partial`、`blocked` 或 `stale`。
+- 完整链路会返回 `recommended_action=use_current_evidence`，明确提示 Agent 使用当前证据而不是继续全局 find/grep；不完整链路会列出 `missing_layers` 和 `stop_reason`。
+- MCP `mc_lookup` walkthrough flatten、core query walkthrough、compact walkthrough 和 Web 查询页统一透出同一状态字段。
+- 默认 Markdown 快速结论中显示完成状态、终点 anchor 和建议动作，保持详细输出同时减少后续无效搜索。
+
+English summary: walkthroughs now expose a structured completion status across core, MCP, and Web query views so agents know when to stop searching, fill missing layers, or refresh stale evidence.
+
+### 3.5.2: Walkthrough Readability Report v2 / 全链路报告可读性优化
+
+- 默认 method walkthrough Markdown 保留完整细节，但改为“快速结论 → 主链路 → 分层详情 → 证据文件 → 风险与数据范围”的阅读顺序。
+- 新增证据文件编号（如 `[F1]`），主链路中用编号引用路径，完整 `absolute_file_path` 仍集中保留在证据文件区和结构化返回字段中。
+- 性能风险按 `code` 聚合展示，重复风险会合并为出现次数和行号摘要，避免同类风险刷屏。
+- Mermaid 默认只绘制主调用链，不再把风险和数据范围节点混入链路图；风险仍在独立章节保留。
+
+English summary: walkthrough Markdown is now detailed but easier to read, with layered sections, numbered file evidence, aggregated risks, and cleaner main-chain diagrams.
+
+### 3.5.1: Full-Chain Query Walkthrough Routing / 全链路 Query 路由修复
+
+- 修复 CLI/core `memory_query_hybrid` 在 `Class#method + 全链路/到底层` 自然语言查询下仍走泛化 graph token 排序的问题。
+- 这类查询现在会优先复用 method walkthrough，返回 `mode_used=query_walkthrough`、`summary_lines`、`answer_markdown`、`read_targets` 和 `agent_usage_policy` 等顶层字段。
+- 真实 workspace 回归中，典型跨服务 `ServiceImpl#method` 全链路查询不再误返回低信号构建文件，可直接追到入口 Service、辅助 Service、Feign、下游 Controller/Impl 与同类辅助查询方法。
+
+English summary: natural-language `Class#method` full-chain queries now route to method walkthrough from the core query entrypoint, avoiding low-signal token-ranked results.
+
+### 3.5.0: Adaptive Retrieval Policy / 自适应检索策略
+
+- 新增纯函数 `RetrievalPolicy`，基于查询意图、索引 freshness 和有界学习权重，在执行检索源之前确定 sources、图深度、候选数和证据预算。
+- 全链路查询固定保留 exact + graph 硬约束，关闭非必要 semantic/vector/BM25，深度图遍历端点直接参与证据融合；普通查询继续兼容原多源检索行为，vector 仍默认关闭。
+- 学习反馈按 intent/source 隔离并限制在 `[0.35, 0.75]`，只能轻量调权，不能覆盖 exact/graph 等规则硬约束。
+- `retrieval_policy` 与 `retrieval_diagnostics.policy` 提供可解释决策；现有 MCP tool schema 和调用参数保持兼容。
+- 公开 Golden 与真实 workspace Golden 均通过；隔离 A/B 中 full-chain median latency 从 `11.964 ms` 降至 `9.261 ms`（`22.6%`），估算 token 从 `7341` 降至 `2812`（`61.7%`）。
+
+English summary: adaptive retrieval now selects bounded sources, graph depth, candidates, and evidence budgets before execution while preserving exact/graph safety constraints and backward-compatible APIs.
+
+### 3.4.0: Java Parser Differential Gate / Java Parser 差异门禁
+
+- 新增 `core/indexing/differential.py` 与公开 `examples/parser-corpus/`，逐项比较 class、interface、重载方法身份、行号、field、注入、调用、Controller mapping 和 Feign mapping。
+- `JavaParseResult` / `JavaSymbol` 新增兼容型 `method_signatures` 与 `constants`，保留原 `methods` 和图节点 ID，不引入破坏性图谱迁移。
+- 修复 interface default method 被误解析为无参重载、嵌套泛型参数类型丢失、多类型文件 Feign 注解归属错误，以及 Controller/Feign mapping 跨类型串线。
+- Controller 与 Feign 现在支持同文件注解常量和组合路径；常量值从 `field_types` 语义中独立为 `constants`，旧字段继续兼容。
+- reindex 新增 additive parser diagnostics：实际 parser、parse/fallback 次数、fallback 原因、native disagreement 和 critical disagreement。
+- 公开 corpus 达到 critical disagreement `0`、entity recall `1.0`、最大行号差 `0`；私有真实 workspace Golden Benchmark 保持 anchor/edge recall `1.0`、forbidden hit `0`。
+
+English summary: this release adds entity-level Java parser differential gates, overload identities, constant-path resolution, observable fallback diagnostics, and scoped Spring mapping extraction.
+
+### 3.3.0: Evidence-Bounded Reasoning Pipeline / 证据预算化推理管线
+
+- 新增 `ReasoningRequest` 与 `ReasoningPipeline`，统一事实、推断和派生结论，并为每条非事实结论返回来源、关系、置信度和 `why`。
+- `memory_context`、`memory_impact` 和 method walkthrough 现在复用同一 Pipeline；原 `patterns` / `transitive` / `risk` 字段继续保留，MCP tool schema、CLI 和 HTTP 路径不变。
+- compact 输出保留最多两条 facts / inferences / derived 及质量摘要，避免 reasoning 结果挤占主链路上下文。
+- 目标级 context / impact / walkthrough 跳过全工作区 pattern scan；workspace audit 仍可运行全局模式。
+- 传递推理从路径爆炸型递归 CTE 改为有界分层批量遍历。私有真实 workspace Golden Benchmark 保持 anchor/edge recall `100%`、forbidden hit `0`，延迟 `2.82s`，额外 token 约 `1.7%`。
+
+English summary: reasoning now has one evidence-bounded pipeline, additive facade integration, compact canonical output, and bounded transitive traversal for large graphs.
+
+### 3.2.1: Golden Benchmark on Real Workspaces
+
+- 新增 `GoldenCase` / `run_golden_suite()`，支持对真实 `workspace.yaml + cases.yaml` 运行 portable Golden Benchmark。
+- 新增 CLI `memory-center eval-golden`、MCP `mc_admin(action="eval_golden")`、HTTP `/workspace/eval-golden` 三入口适配。
+- Golden evidence extraction 现在能从 walkthrough 的 `same_class_method_continuations`、`local_service_continuations`、`feign_continuations.server_walkthroughs`、`service_impl_continuations` 提取逻辑锚点与边类型。
+- 新增公开示例 `examples/golden-benchmark/`：包含 demo `workspace.yaml`、公开 `cases.yaml` 和私有 benchmark 模板 `cases.template.yaml`。
+- 新增 Golden Benchmark 测试，覆盖 scoring、隐私字段防护、CLI/MCP/HTTP dispatch，以及 public demo suite 真实回归。
+
+### 3.2.0: Consistency, Incremental Indexing, and Observability
+
+- Unified Backend 新增 observable dual-read，旧镜像、部分 JSONL 和 backend 不可用时回退文件事实源，并返回来源与一致性 diagnostics。
+- 增量索引统一处理新增、修改、删除和 rename；删除或旧 rename 路径会同步清理确定性索引与 graph。
+- hybrid lookup 与 walkthrough 新增兼容型 `_meta`，query、audit、drill-down 新增统一 `_quality`，明确 fact / inferred / derived、置信度和验证动作。
+- 新增 `OperationObserver`，reindex 与 hybrid lookup 自动记录脱敏的 outcome、duration 和 result count。
+- 新增 portable benchmark baseline，只保存拓扑规模、耗时、结果数、质量分和 parser，不记录路径或任意 payload。
+- HTTP route family、walkthrough operations、Feign `REQUEST` 兼容和 metrics summary 修复一并纳入本版本。
+
+### 内部架构收敛：walkthrough / HTTP / MCP / 检索 / indexer
+
+这一批改动只涉及内部模块重组与回归保护，不改变任何 MCP tool schema、HTTP 路径、CLI 命令名或返回结构；既有 agent / hook / 前端调用方无需调整。
+
+- Walkthrough 端到端组装收敛到 ``memory_center.core.walkthrough.runner.build_walkthrough_result``。``orchestrator.query.memory_method_walkthrough`` 现在只是一个 facade，提供 ``lookup_provider`` 与 ``escalation_runner`` 注入点；``cache key`` 也通过 ``runner.method_walkthrough_cache_key`` 暴露，便于直接测试。
+- ``core/walkthrough/`` 按 ``symbols`` / ``continuations`` / ``risks`` / ``answer`` / ``escalation`` / ``runner`` / ``operations`` 拆分；health、quality、export 也已从 ``orchestrator.query`` 下沉，兼容 facade 只负责依赖注入。
+- HTTP JSON 路由由 ``memory_center.http.route_dispatch.build_http_route_registry`` 组合 ``workspace`` / ``workflow`` / ``analysis`` 三个 route-family Module，并复用进程级 registry；请求级 ``RouteParams`` 在 dispatch 时传入，避免每请求重建全部 handler。``server._route_request`` 仅保留 ``/health`` 与未知路由错误。
+- MCP ``mc_admin`` 的 81 项 action 抽到 ``memory_center.mcp.admin_actions.build_admin_registry``。``mcp/server.py`` 仅保留 FastMCP signature 与请求 adapter；``tests/test_mcp_admin_actions.py`` 直接通过 registry seam 验证 action 表。
+- Hybrid retrieval fusion 默认纯函数化：``_merge_retrieval_results`` / ``_apply_type_boosting`` 不再修改 caller-owned ``RetrievalResult``（score / sources / evidence / node），新增 ``tests/test_hybrid_fusion_purity.py`` 5 项回归测试。
+- Indexer Feign↔API 关联从 ``O(|feign_methods| × |apis|)`` 改为 ``O(|feign_methods|)``：``_build_api_lookup`` 按 ``(http_method, normalized_path)`` 桶索引，``_candidate_apis_for_feign_method`` 直接查表。Field 节点同时按 ``(class, field_name)`` 建立 ``field_locations_by_class`` 桶，避免 ``substring`` 过滤。``tests/test_indexer_perf.py`` 守住 ≥5× 速度比；``tests/test_benchmark_workspace_perf.py`` 用合成 8 服务 × 6 controller × 4 endpoint 的 Spring Cloud 形态 workspace 给 reindex / graph build / walkthrough / hybrid retrieval 加 wall-clock budget。
+- 修复通用 ``@RequestMapping`` Feign 方法解析为 ``REQUEST`` 后无法匹配 GET/POST endpoint 的索引回归；通配桶现在按路径保留所有 HTTP 方法候选。
+- 修复 ``mc_admin(action="metrics_summary")`` 未向 collector 传递指标名的问题；``name`` 现在作为 ``metric_name`` 使用，缺参仍返回结构化提示。
+- 文档：``docs/ARCHITECTURE.md`` 同步 walkthrough / route_dispatch / admin_actions / hybrid purity / indexer lookup / benchmark 的拆分结构与 P2 守护条款；不再在 README / CHANGELOG 中记录这些公开 API 不变的内部 seam（变更仅作为内部参考保留在本节）。
+
+### 3.1.15: Method Walkthrough / 方法级链路梳理
+
+- 升级版本号到 `3.1.15`
+- 新增 `memory_method_walkthrough()`，面向 `Class#method` 返回方法内已索引步骤、DTO 字段读取、Feign 续链、下游图谱摘要和后续动作。
+- `mc_lookup(mode="walkthrough")` 与 `memory-center method-walkthrough` 可直接调用方法级 walkthrough。
+- `mc_lookup(mode="auto")` 遇到 `Class#method` 且包含“全链路/到底层”语义时优先进入 walkthrough，减少 agent 退回手工 grep 的概率。
+- `mc_admin(action="method_walkthrough")` 支持从管理路由触发同一能力。
+- Feign 续链新增兼容字段 `server_walkthroughs`，会优先展开目标服务 endpoint 的 Controller 方法，并通过 `service_impl_continuations` 继续解析同项目 Service interface → Impl 的落点。
+- compact walkthrough 改为优先保留关键方法调用和 Feign 调用，而不是按行号截断到 DTO 字段读取。
+- 新增 `local_service_continuations`，用于展开当前方法内普通 Service interface → Impl 调用，减少 agent 退回手工读源码。
+- walkthrough 的 target、matched endpoint、server walkthrough、local/server Impl 续链均新增 `absolute_file_path`，摘要行优先展示绝对路径，并提示无需再用 `find` 定位文件。
+- walkthrough 新增 `agent_usage_policy`，明确 `absolute_file_path` 存在时不要再用 `find` / `grep -l` / `rg --files` / IDE 搜索定位同一 Controller 或 Impl。
+- MCP `mc_lookup` 工具说明、cross-service prompt、默认 hooks 和 Cursor adapter 均同步 full-chain walkthrough 使用规则，减少宿主模型绕回搜索工具。
+- 新增 `same_class_method_continuations`，运行时识别同类未限定方法调用（例如 `query2query(queryDto)`），并返回目标方法、绝对路径、局部步骤和 DTO 字段过滤摘要，减少 `sed -n` 切片追私有方法。
+- `local_service_continuations` / 服务端 Impl 续链现在会继续展开内部 Feign 调用，便于直接看到 Impl 内的远程下游。
+- `agent_usage_policy` 新增 `do_not_sed_when_continuation_present`，提示续链已存在时不要再用 `sed -n` 切源码片段。
+- MCP `mc_lookup(auto|walkthrough)` 的 walkthrough 响应新增顶层 `answer`、`summary_lines`、`primary_flow`、`read_targets` 和 `agent_usage_policy`，避免宿主模型为了读取 `result.summary_lines` 再解析 tool-result JSON 文件。
+- full-chain auto walkthrough 响应不再附带 `lookup_hint` / `candidate_paths` 大对象，减少输出体积和解析噪声；详细结构仍保留在 `result` 字段。
+- 顶层 `read_targets` 只保留 walkthrough 摘要主线的 target / local impl / 首选 server controller / server impl / server impl same-class 方法；其他候选 endpoint 仅保留在 `result` 详情中。
+- 新增 `workspace_escalation`：从子项目 workspace 调用 method walkthrough 时，会自动查找父级或 registry 中覆盖当前项目的聚合 workspace；若聚合 workspace 返回更完整跨服务链路，则自动切换。找不到父级或候选失败不会报错，保留当前 workspace 结果。
+- 新增可配置报告模板：`.memory-center/templates/method_walkthrough.md` 或 `.memory-center/method_walkthrough_template.md` 存在时渲染 `answer_markdown`；未配置时使用内置兜底模板，agent 仍可基于顶层 `summary_lines` 自行组织。
+- `same_class_method_continuations` 新增 `rule_groups` 与 `target.evidence_span`，用于把 `query2query` 这类大方法按业务规则分组并标出方法行范围。
+
+### Packaging / 打包版本
+
+- 升级版本号到 `3.1.5`
+- 本地安装默认对齐当前仓库最新代码
+
+### C-03: 查询意图识别与排序收敛
+
+- `detect_query_intent()` 修复 Service/Feign 混淆：ontology 确认是 Feign 时降低 class 权重，endpoint 命名约定（Controller/Resource/Api）正确提升优先级
+- `_JAVA_PATTERNS` 新增 method 模式（camelCase），`pattern.match` 改为 `pattern.search` 修复 endpoint 匹配
+- `_apply_type_boosting()` 新增 contract 意图惩罚：feign/mq/endpoint 意图时对无关结构类型降权
+- project filter 为空时返回一致的空结果
+
+### C-04: Contracts 行为收口
+
+- `_filter_contracts_by_query()` 输出新增 `_semantic_strength` 和 `_match_reason` 字段
+- Feign → API 关联改用 `EntityValidator.validate_endpoint_path()` 验证路径特异性
+- 关联结果标记 `_association` 和 `_association_confidence`
+
+### C-07: Reasoning patterns 主链路化
+
+- `memory_context()` 升级为统一 `run_reasoning_patterns()`，返回完整 `_reasoning` 字段
+- `memory_impact()` not-found 分支也返回 `freshness` 和 `_reasoning`
+
+### Retrieval、Incremental Indexing 与 Verification 修复
+
+- reindex 自动重建 SQLite BM25，并在语义索引存在 dense vectors 时同步 VectorIndex
+- 修复 BM25 命中未进入 hybrid fusion 的问题
+- 修复 `enable_vector=False` 仍执行向量检索、`vector_weight` 未参与评分的问题
+- vector 默认关闭，disabled / empty / unavailable / active 状态通过 diagnostics 明确可见
+- 增量索引支持显式 workspace，并可从 repo root 或 graph db 路径推导 workspace
+- 增量重建失败返回 `reindex_error`，不再静默伪装成功
+- Verification Loop 全阶段完成后返回 `completed`，公开状态与完成度保持一致
+- 修复重复测试类导致部分 E-07 测试未被收集的问题
+- 全量验证：1292 collected，1277 passed，15 skipped
+
+## 3.1.2
+
+### 主链路一致性与 workspace 隔离 / Workflow Consistency and Workspace Isolation
+
+- 升级版本号到 `3.1.2`
+- 修复 `business-flow` / `business-flow-impact` 的 CLI、MCP、HTTP workspace 解析一致性，避免把 `workspace.yaml` 当 SQLite graph db 打开
+- 修复 `memory_context` 风险分析调用不存在的 `RiskAnalyzer` 导致 `risk_patterns` 静默为空的问题，改为 `RiskPatternEngine` 并返回可见 diagnostics
+- 修复 hybrid vector retrieval 的导入 / store 构造问题，并在返回中增加 `retrieval_diagnostics.vector`
+- 修复 `regression-alerts` 三入口错误传入 `benchmark_name` 的问题，统一为 `threshold_pct`
+- 增加 Next Phase 入口矩阵测试，覆盖 context-pack、freshness、onboard、business-flow、business-flow-impact、runtime-audit、regression-alerts
+- 将统一错误模型接入真实 CLI、MCP、HTTP 入口，保持成功返回和 MCP tool schema 不变
+- CLI 运行时错误现在输出安全的 `[error_type] message` 和建议动作，不再暴露 traceback
+- 完成 Unified Backend 主读路径盘点，明确 `memory.db`、`graph.db`、文件事实源和 fallback 边界
+- 调整测试用例，避免直接写入仓库内 `examples/spring-cloud-demo/.memory-center` 生成物
+- 补充 workspace 隔离、三入口解析和后续维护要求的特殊说明
+
+## 3.1.1
+
+### 主链路收口 / Main Workflow Stabilization
+
+- 升级版本号到 `3.1.1`
+- 延续 v3.1 系列对 V3 / Next Phase 能力的产品化收口
+- 重点面向 freshness、context、impact、business flow、retrieval、CLI / MCP / HTTP 一致性等主链路稳定性优化
+- 保持 MCP facade schema 向后兼容
+
+## 3.0.0
+
+### 开发路线全量实现 / Full Implementation
+
+#### Phase A: Ontology 约束层 / Ontology Constraint Layer
+- `hybrid_retrieve` 返回结果增加 `semantic_strength` (fact/inferred/derived) 和 `confidence_label` (high/medium/low)
+- `_result_to_dict` 支持 dict 和 str 两种 evidence 格式的语义强度推断
+- `_EDGE_SEMANTIC_STRENGTH` 映射从 `docs/ONTOLOGY.md` 定义的语义强度已接入检索结果
+
+#### Phase B: 检索质量收口 / Retrieval Quality
+- `detect_query_intent` 保持 Feign/MQ/Endpoint 的高优先级区分
+- `hybrid_retrieve` 返回中增加 ontology-aware 语义强度字段
+- evidence 解析支持字符串和字典两种格式，避免运行时类型错误
+
+#### Phase C: Benchmark 趋势化 / Benchmark Trending
+- `check_regression_alerts` 接入 MCP `mc_admin` (action: regression_alerts)
+- `check_regression_alerts` 接入 CLI 命令 `regression-alerts`
+- `check_regression_alerts` 接入 HTTP 路由 `/workspace/regression-alerts`
+
+#### Phase D: Completion Audit 产品化 / Completion Audit
+- `detect_workspace_type()` 已实现并可用于类型化审计规则
+
+#### Phase E: Timeline/Ref/Task 体验增强
+- drill-down 导航已接入 CLI / MCP / HTTP 三入口
+
+#### Phase F: SQLite 主读路径
+- `UnifiedBackendQuery` 统一后端查询已落地
+
+#### Direction 1: Inverted Retrieval
+- `InvertedIndex` 已实现并可用于稀疏检索
+
+#### Direction 2: Graph Reasoning
+- `reasoning/patterns.py`, `reasoning/transitive.py`, `reasoning/risk.py` 已实现
+
+#### Direction 3: Indexer Upgrade
+- `TreeSitterJavaParser` 已实现（CG-1），带 `RegexJavaParser` 回退
+- tree-sitter 已接入 indexer.py 自动检测
+
+#### Direction 4: Type Safety & Observability
+- `MetricsCollector` 结构化指标收集器已实现（JSONL 后端，线程安全）
+- `Explanation` schema 支持 persona 适配 (developer/architect/manager)
+
+#### CG 外部思想吸收 / External Absorption (codegraph)
+- **CG-1**: Tree-sitter Java Parser 已实现
+- **CG-2**: `InvertedIndex` 倒排检索已实现
+- **CG-3**: Freshness banner 已接入查询链路
+- **CG-4**: `trigger_incremental_reindex` watcher-to-reindex 桥接已实现
+- **CG-5**: `ContextPackBuilder` 已接入 MCP `mc_context_pack`
+- **CG-6**: `benchmark_context_pack` 已实现
+- **CG-7**: Workspace daemon 可行性研究（文件已存在）
+
+#### UA 外部思想吸收 / External Absorption (Understand-Anything)
+- **UA-1**: `ArchitectureTourGenerator` 已接入 MCP `mc_onboard`、CLI、HTTP
+- **UA-2**: `Explanation` schema 已实现，支持 persona 适配
+- **UA-3**: `BusinessFlowExtractor` + `BusinessFlowGraph` 已实现并接入 CLI/MCP/HTTP
+- **UA-4**: `find_impact_along_flows` 流感知影响分析已实现
+- **UA-5**: `adapt_for_persona` persona 视角输出已实现
+- **UA-6**: freshness watcher 支持增量知识刷新
+
+#### ECC 外部思想吸收 / External Absorption (ECC)
+- **ECC-1**: `WorkflowProfile` 工作流协议档案已实现 (quick-fix/contract-change/long-task/architecture)
+- **ECC-2**: `VerificationLoop` 验证闭环已实现 (analyze → checklist → verify → close)
+- **ECC-3**: `PatternPromotion` 模式晋升管道已实现 (propose → promote → list)
+- **ECC-4**: `HeuristicsRegister` 学习启发式注册已实现 (record → query → update_confidence)
+- **ECC-5**: `audit_agent_runtime` Agent 运行时审计已实现
+- **ECC-6**: `generate_agent_bundle` Agent 使用包导出已实现 (codex/claude/cursor)
+
+#### MCP 新增 Actions
+- `verification_loop`, `pattern_promotion_propose`, `pattern_promotion_list`, `pattern_promotion_promote`
+- `heuristics_query`, `heuristics_record`, `workflow_profile`, `workflow_recommend`
+- `bundle_export`, `runtime_audit`, `explanation`
+- `business_flow`, `business_flow_impact`, `metrics_summary`, `regression_alerts`
+
+#### CLI 新增命令
+- `verification-loop`, `pattern-promotion`, `heuristics`, `workflow-profile`, `workflow-recommend`
+- `bundle-export`, `runtime-audit`, `explanation`, `business-flow`, `business-flow-impact`
+- `metrics-summary`, `regression-alerts`
+
+#### HTTP 新增路由
+- `/workspace/verification-loop`, `/workspace/pattern-promotion`, `/workspace/heuristics`
+- `/workspace/workflow-profile`, `/workspace/workflow-recommend`, `/workspace/bundle-export`
+- `/workspace/runtime-audit`, `/workspace/explanation`, `/workspace/business-flow`
+- `/workspace/business-flow-impact`, `/workspace/metrics-summary`, `/workspace/regression-alerts`
+- `/workspace/onboard`, `/workspace/context-pack`, `/workspace/freshness`
+- `/workspace/group-status`, `/workspace/group-query`, `/workspace/group-impact`, `/workspace/group-chain`
+
+#### Vue 前端新增页面
+- `VerificationView.vue` — 验证闭环、工作流档案、运行时审计
+- `FlowView.vue` — 业务流提取与影响分析
+- `MetricsView.vue` — 结构化指标总览
+- `OnboardView.vue` — 架构导览与新人入职
+
+#### Bug 修复 / Bug Fixes
+- 修复 `flow.py` 语法错误：合并重复的 `from __future__ import annotations`
+- 修复 `_result_to_dict` 中 evidence 为字符串时的 AttributeError
+- 修复 HTTP server 新路由中 `group_status` 等变量被局部 import 遮蔽导致的 UnboundLocalError
+
+## 2.3.0
+
+- **Vue 前端工作台**
+  - 新增 `web/` 目录，Vue 3 + Vite + vue-router + axios
+  - 覆盖 14 个页面：Workbench / Dashboard / Continuity / Task / Query / Impact / Group / Timeline / Receipts / Usage / Backend / Freshness / Audit / Health
+  - HTTP 服务器自动在 `/app` 路径托管构建后的 Vue SPA
+  - 开发模式支持热更新：`cd web && pnpm dev`
+- **跨项目查询性能优化**
+  - `group_status` / `group_query` 改为 `ThreadPoolExecutor` 并行执行
+  - `resolve_group` 和 `_load_group_data` 增加 15 秒 TTL 缓存
+  - 大幅减少多项目场景下的串行等待时间
+- **跨项目链路可解释性增强**
+  - `group_query` / `group_impact` / `group_chain` 返回中新增 `top_bridges`、`bridge_reasons`、`cross_workspace_path_hint`
+  - 让用户和模型理解跨项目关联的原因
+- **文档更新**
+  - README.md 增加 Vue 前端安装和使用说明
+  - ARCHITECTURE.md 增加 Vue 前端模块架构
+  - 内部开发路线文档标记已实现项
+
+## 2.2.0
+
+- **开发路线已实现能力完成收口**
+  - 完成并接入主链路：hybrid retrieval、benchmark trending、unified backend query、drill-down navigation、completion audit
+  - CLI / MCP / HTTP 入口同步可用
+- **混合检索**
+  - 新增 `memory_center/core/retrieval/hybrid.py`
+  - 初始版本支持 graph + sparse + semantic 三路混合检索；当前版本已扩展为 graph / FTS / BM25 / semantic / optional vector
+  - 增加查询意图自动检测与渐进式摘要输出
+- **基准趋势**
+  - 新增 `memory_center/core/benchmark/trending.py`
+  - 支持 benchmark baseline、trend、回归检测和健康报告
+- **统一后端查询**
+  - 新增 `memory_center/core/backend/query.py`
+  - 提供 `UnifiedBackendQuery`，统一索引、记录、引用和聚合查询
+- **钻取导航**
+  - 新增 `memory_center/core/navigation/drilldown.py`
+  - 支持 `drill_timeline`、`drill_task`、`expand_ref`、handoff context 构建
+- **完成审计**
+  - 新增 `memory_center/core/audit/completion.py`
+  - 支持文档、测试、实现、设计一致性检查与建议生成
+- **文档结构继续收敛**
+  - 删除阶段性文档 `docs/V3_PLAN.md`
+  - 删除阶段性实施报告文档
+  - 删除单版本文档 `docs/CHANGELOG_v2.2.0.md`
+  - 剩余计划统一并入内部开发路线文档
+- **本体与治理方向转入下一阶段**
+  - 近期重点转为 ontology、检索质量继续收口、SQLite 主读路径推进、audit 产品化与 drill-down 体验增强
+
+## 2.1.8
+
+- **发布版本更新**
+  - Python 包版本更新为 `2.1.8`
+
+## 2.1.7
+
+- **安装脚本默认目标修正**
+  - 在本地仓库中执行 `bash install.sh` 时，默认安装当前 checkout，而不是回退到远端 GitHub 仓库
+  - 仍然保留 `curl ... | bash` 场景下默认从 GitHub 安装的行为
+  - 安装脚本会自动优先选择本机可用的 `python3.10+`，并按当前 package target 重新安装已有 `pipx` 环境
+- **发布版本更新**
+  - Python 包版本更新为 `2.1.7`
+
+## 2.1.3
+
+- **文档体系重构**
+  - 补回根目录维护者文档：`TECHNICAL_GUIDE.md`、内部开发路线文档
+  - `README.md`、`docs/archive/ROADMAP.md`、`docs/RELEASE.md` 与技术/计划文档重新串联
+  - 调整文档分层：对外使用线与对内维护线并存
+
+## 2.1.2
+
+- **文档结构收敛**
+  - 主文档收敛为 7 份核心 docs
+  - `README`、`ROADMAP`、`CHANGELOG` 的角色重新划分
+  - 清理重复、阶段性和过细的旧文档入口
+
+## 2.1.1
+
+- **Hook 默认策略收口**
+  - `user_prompt_submit` 默认禁用
+  - Claude Code / Codex adapter 默认不再生成 `UserPromptSubmit`
+  - 避免普通自然语言请求（如“继续”“下一步”“同步下文档”）被建议型 Hook 打断
+- **Hook 配置行为修复**
+  - `enabled: false` 现在会被 runner 和 adapters 一起真正视为禁用
+  - `tool_matcher` 统一从 `filter.tool_matcher` 读取，配置语义与执行语义一致
+
+## 2.1.0
+
+- **agentmemory 风格 token benchmark**
+  - 新增 `memory_eval_token_benchmark`
+  - 覆盖 7 个高频函数：`sniff / status / resume / recent_evidence / continuity / dashboard / handoff`
+  - 对 `small / medium / large` 三档预算输出按函数对比表和总 token 统计
+- **Top-K evidence 策略**
+  - `workspace_recent_evidence` 的 compact 模式采用显式 top-K
+  - `small=3`、`medium=5`、`large=10`
+  - 排序优先级为 `ref_id + summary + payload_ref/receipt_ref` 的信号丰富度，再按时间倒序
+- **SQLite 后端读路径扩展**
+  - `_resolve_memory_ref` 优先复用 backend 读取 session events / write receipts
+  - timeline 和部分高频读路径进一步优先复用 SQLite backend
+
+## 2.0.11
+
+- **默认 compact 与短引用收口**
+  - 全部 7 个高频大返回默认 `view=compact`
+  - `workspace_recent_evidence` 补齐 `view=compact|full`
+  - `memory_ref_get` 增加 `timeline_ref`
+- **UI / workbench 增强**
+  - dashboard / continuity 增加 `view / budget` 切换
+  - `/ui/ref`、`/ui/timeline`、`/ui/task` 等页面钻取能力增强
+  - guided tour、next action 卡片、cross-page links
+- **Hook / adapter 增强**
+  - Codex adapter 生成脚本可执行化
+  - Cursor adapter 补充 MCP 命令与 quick reference
+
+## 2.0.10
+
+- `recent_evidence` 的 compact/full 与 gain 收口
+- 短引用体系进一步补齐
+- ref → timeline 反向导航落地
+
+## 2.0.9
+
+- Hook 资源模板与打包问题修复
+- 默认 hooks 配置修正
+- 核心数据处理与稳定性增强
+
+## 2.0.5
+
+- token gain 跟踪与评测
+- Hook runner / adapters 基础能力
+- 工作流编排评测与预算优化
+- SQLite 优先读取开始接入更多路径
+
+## 2.0.4
+
+- 增量索引第一阶段
+  - `--project`
+  - `--path`
+  - `--changed-only`
+- `work-*` 一键工作流命令
+- workbench / backend query 第一阶段
+
+## 2.0.2
+
+- regression suite
+- compact / full
+- budget
+- short refs
+- `memory_ref_get / batch`
+
+## 2.0.0
+
+- continuity / handoff / dashboard 主链路成型
+- write receipt / write judge / write plan / write execute
+- 多根目录 workspace 支持
+- 工具使用报告与 lookup hint
+
+## 1.3.0
+
+- 共享工件与 sync sniff / sync case
+- 自动同步模式
+- 更完整的代码搜索、符号解析和调用链分析
+
+## 1.0.0
+
+- 项目正式命名为 **Memory Center / 记忆中心**
+- Python 包统一为 `memory_center`
+- CLI / MCP 命令统一为 `memory-center` / `memory-center-mcp`
+- README 和公共文档体系初步建立
+
+## 0.2.0
+
+- Public GitHub-ready repository structure
+- Apache-2.0 license, templates, basic docs, CI
+
+## 0.1.0
+
+- Initial MVP with workspace indexing, MCP tools, default rules and agent instructions

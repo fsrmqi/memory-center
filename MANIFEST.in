@@ -1,0 +1,17 @@
+include README.md
+include LICENSE
+include NOTICE
+recursive-include docs *.md
+recursive-include examples *.yaml *.java *.yml *.md
+
+recursive-include memory_center/service/static *
+recursive-include frontend *.json *.ts *.vue *.html
+prune frontend/node_modules
+include requirements-service.lock
+include Dockerfile
+include compose.yaml
+include .dockerignore
+include compose.projects.yaml
+
+include compose.postgres.yaml
+recursive-include scripts/service *.sh

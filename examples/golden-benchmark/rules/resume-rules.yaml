@@ -1,0 +1,57 @@
+default:
+  fields:
+  - task_id
+  - task_title
+  - task_status
+  - current_phase
+  - current_summary
+  - latest_receipts
+  - recent_evidence
+  - next_recommended_actions
+  - unresolved_items
+  - verification_pending
+  evidence_limit: 5
+  receipt_limit: 5
+  action_limit: 5
+  unresolved_limit: 5
+profiles:
+  rule_update:
+    trigger_keywords:
+    - 规则
+    - 规范
+    - invariant
+    - migration
+    - 策略
+    fields:
+    - task_id
+    - task_title
+    - current_phase
+    - current_summary
+    - recent_evidence
+    - unresolved_items
+    - next_recommended_actions
+    - verification_pending
+    evidence_limit: 6
+    receipt_limit: 4
+    action_limit: 6
+    unresolved_limit: 6
+  implementation:
+    trigger_keywords:
+    - 修复
+    - 改造
+    - 实现
+    - 开发
+    - 需求
+    fields:
+    - task_id
+    - task_title
+    - task_status
+    - current_phase
+    - current_summary
+    - latest_receipts
+    - next_recommended_actions
+    - unresolved_items
+    evidence_limit: 4
+    receipt_limit: 6
+    action_limit: 6
+    unresolved_limit: 5

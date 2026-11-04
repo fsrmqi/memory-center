@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    # 3.11 是本仓库开发与验收使用的版本；3.12 先作为实验性矩阵项收集信号。
+    # 3.11 is the development/verification version; 3.12 is experimental for now.
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.python-version == '3.12' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+      - name: "Lint (blocking: syntax / undefined names)"
+        # 全量 `ruff check .` 仍会报历史风格告警（E701/E702/I001/F401…），
+        # 公开 CI 先阻断真正会出错的规则，全量清理单独跟进。
+        # The full `ruff check .` still reports legacy style warnings; block only
+        # the rules that indicate real breakage, and track full cleanup separately.
+        run: ruff check --select E9,F63,F7,F82 --output-format=concise .
+      - name: "Lint (advisory: full ruff)"
+        continue-on-error: true
+        run: ruff check . --output-format=concise
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # 管理页是构建产物，不入库（见 AGENTS.md：不提交构建产物）。服务测试要求
+      # memory_center/service/static 存在，因此必须先构建再跑测试；打包同理。
+      # The admin page is build output and is intentionally not committed; service
+      # tests need memory_center/service/static, so build it before running pytest.
+      # Mirrors scripts/service/build-release.sh.
+      - name: Build admin page
+        run: |
+          cd frontend
+          npm ci --ignore-scripts
+          npm run build
+      - name: Test
+        run: pytest
+      - name: Build package
+        if: matrix.python-version == '3.11'
+        run: python -m build
+      - name: Verify wheel ships the admin page
+        if: matrix.python-version == '3.11'
+        run: unzip -l dist/*.whl | grep -q 'memory_center/service/static/index.html'

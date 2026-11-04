@@ -1,0 +1,25 @@
+default:
+  mode_aliases:
+    safe: strict
+    strict: strict
+    balanced: balanced
+    aggressive: aggressive
+  modes:
+    strict:
+      min_delta: 2
+      allowed_risk_levels:
+      - low
+      fallback: strict 模式下建议优先人工确认 task_candidates。
+    balanced:
+      min_delta: 0
+      allowed_risk_levels:
+      - low
+      - medium
+      fallback: balanced 模式下可先检查 task_candidates[0] 再决定是否同步。
+    aggressive:
+      min_delta: 0
+      allowed_risk_levels:
+      - low
+      - medium
+      - high
+      fallback: aggressive 模式会优先推进自动同步，但高风险任务仍建议人工复核。

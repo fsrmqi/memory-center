@@ -1,0 +1,1604 @@
+"""Workspace status, sniff, trace, lookup_hint, and dashboard functions."""
+from __future__ import annotations
+
+import json
+import re
+import time
+from copy import deepcopy
+from datetime import datetime
+from pathlib import Path
+from typing import Any
+
+from memory_center.core.foundation.schemas import with_schema
+from memory_center.core.governance.rules import match_rules
+from memory_center.core.observability.tracking import log_token_gain
+from memory_center.core.retrieval.planner import workspace_performance_summary
+from memory_center.core.storage.runtime import RuntimeStore
+from memory_center.core.storage.workspace import WorkspaceStore
+from memory_center.core.workspace.jobs import workspace_job_status
+from memory_center.core.workspace.shape import analyze_workspace_shape
+
+from ..indexing.control_plane import index_control_status
+from ..indexing.reindex_state import workspace_reindex_status
+from ..tasks.artifacts import (
+    CORE_MEMORY_BLOCKS,
+    get_task_artifact,
+    list_task_spaces,
+    resolve_task_space,
+)
+from ..tasks.receipts import WRITE_RECEIPTS_FILE
+from ..verification.heuristics import apply_candidate_path_learning
+from .compact import (
+    _compact_continuity_dashboard,
+    _compact_sniff_result,
+    _compact_workspace_dashboard,
+    _compact_workspace_status,
+    _measure_compact_gain,
+)
+from .query import memory_callees, memory_callers, memory_tool_usage_report
+from .ranking import (
+    rank_files,
+    tokenize,
+)
+from .session import workspace_recent_evidence
+from .shared import (
+    LAYER_L0,
+    LAYER_L0_5,
+    LAYER_L1,
+    LAYER_L2,
+    LAYER_L3,
+    MEMORY_LAYER_ORDER,
+    SESSION_EVENTS_FILE,
+    SESSION_NOTES_FILE,
+    SESSION_SUMMARIES_FILE,
+    _build_sniff_auto_sync_recommendation,
+    _build_sniff_source_refs,
+    _is_compact_view,
+    _sniff_risk_level,
+    _trim_summary,
+    load_context,
+)
+from .case_decisions import CASE_DECISIONS_FILE, project_case_truth
+from ..tasks.session_notes import SESSION_NOTE_DECISIONS_FILE, project_note_statuses
+from .write import memory_write_judge, workspace_write_receipts
+
+_JAVA_CHAIN_SYMBOL_RE = re.compile(
+    r"((?:[a-z_][\w$]*\.)+[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?|[A-Z][\w$]*(?:#[a-zA-Z_][\w$]*)?)"
+)
+_LARGE_WORKSPACE_FILE_THRESHOLD = 2_000
+_SNIFF_CACHE_TTL_SECONDS = 15.0
+_SNIFF_CACHE: dict[tuple[object, ...], tuple[float, dict[str, Any]]] = {}
+
+
+# ---------------------------------------------------------------------------
+# Public functions
+# ---------------------------------------------------------------------------
+
+
+def workspace_status(workspace_file: str | Path, view: str = "compact", budget: str = "medium") -> dict[str, Any]:
+    config, store = load_context(workspace_file)
+    workspace_shape = analyze_workspace_shape(config)
+    active_tasks = _active_task_summaries(workspace_file, limit=5)
+    current_focus_task = dict(active_tasks[0]) if active_tasks else None
+    memory_layers = _build_memory_layers(config, store, active_tasks)
+    core_memory_blocks = _build_core_memory_blocks_status(store)
+    if current_focus_task:
+        current_focus_task["focus_reason"] = _build_focus_reason(current_focus_task)
+    index_summary = store.read_json_prefer_backend("index-summary.json", {})
+    from memory_center.core.knowledge.communities import architecture_communities_status
+    try:
+        from ..freshness.targeted_refresh import hot_refresh_status
+        refresh_status = hot_refresh_status(workspace_file)
+    except Exception:
+        refresh_status = {"mode": "unavailable"}
+    semantic_summary = {
+        "doc_count": int(index_summary.get("semantic_docs", 0) or 0),
+        "ready": int(index_summary.get("semantic_docs", 0) or 0) > 0,
+        "backend": index_summary.get("semantic_backend", "unknown"),
+        "model": index_summary.get("semantic_model"),
+        "vector_status": index_summary.get("vector_status", "unknown"),
+        "summary_source": "sqlite_index_store" if index_summary else "missing_reindex_required",
+    }
+    result = {
+        "workspace": config.workspace,
+        "root": str(config.root_path),
+        "services": [s.__dict__ for s in config.services],
+        "workspace_shape": workspace_shape,
+        "workspace_warnings": workspace_shape.get("warnings", []),
+        "index_counts": {
+            "files": int(index_summary.get("files", 0) or 0),
+            "symbols": int(index_summary.get("symbols", 0) or 0),
+            "apis": int(index_summary.get("apis", 0) or 0),
+            "feigns": int(index_summary.get("feigns", 0) or 0),
+            "mq": int(index_summary.get("mq", 0) or 0),
+            "cases": len(store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=1000)),
+            "session_events": len(store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=5000)),
+            "session_summaries": len(store.read_jsonl_prefer_backend(SESSION_SUMMARIES_FILE, limit=1000)),
+            "semantic_docs": semantic_summary["doc_count"],
+        },
+        "semantic_index": semantic_summary,
+        "index_summary_status": semantic_summary["summary_source"],
+        "hot_refresh": refresh_status,
+        "index_control": index_control_status(store),
+        "query_performance": workspace_performance_summary(workspace_file),
+        "reindex": workspace_reindex_status(store),
+        "jobs": workspace_job_status(str(workspace_file), limit=5),
+        "memory_layers": memory_layers,
+        "memory_overview": _build_memory_overview(memory_layers),
+        "memory_backend": store.memory_backend_stats(),
+        "write_receipts_overview": _build_write_receipts_overview(store),
+        "continuity_overview": _build_continuity_overview(workspace_file, active_tasks),
+        "core_memory_blocks": core_memory_blocks,
+        "active_task_spaces": active_tasks,
+        # Session-first（P0-2）：current_focus_task 降级为"最近可恢复候选"排序
+        # 首位；可信焦点必须由 resolve_session_focus（session/显式 task 输入）给出。
+        "current_focus_task": current_focus_task,
+        "current_focus_task_semantics": "resumable_head",
+        "focus": {"kind": "none", "task_id": "", "shadow_id": "", "binding_mode": "none", "binding_reason_code": "no_session_context", "is_current_session_bound": False},
+        "topology": store.read_json_prefer_backend("service-topology.json", {}),
+        "architecture_communities": architecture_communities_status(workspace_file),
+    }
+    from memory_center.core.knowledge.state import attach_knowledge_state
+
+    attach_knowledge_state(store, result, mode="workspace_status")
+    if _is_compact_view(view):
+        compact = _compact_workspace_status(result, budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "workspace_status", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
+    return result
+
+
+def workspace_sniff(
+    workspace_file: str | Path,
+    intent: str,
+    limit: int = 12,
+    auto_sync_mode: str = "balanced",
+    include_lookup_hint: bool = True,
+    view: str = "compact",
+    budget: str = "medium",
+    deadline_ms: int = 5_000,
+) -> dict[str, Any]:
+    started_at = time.perf_counter()
+    config, store = load_context(workspace_file)
+    cache_key = _sniff_cache_key(store, intent, limit, auto_sync_mode, include_lookup_hint, view, budget, deadline_ms)
+    cached = _SNIFF_CACHE.get(cache_key)
+    if cached and cached[0] > time.monotonic():
+        result = deepcopy(cached[1])
+        result.setdefault("performance", {})["cache_hit"] = True
+        result["performance"]["total_ms"] = round((time.perf_counter() - started_at) * 1000, 2)
+        return result
+    stage_started = time.perf_counter()
+    file_index = store.read_json_prefer_backend("file-index.json", [])
+    apis = store.read_json_prefer_backend("api-index.json", [])
+    feigns = store.read_json_prefer_backend("feign-index.json", [])
+    mq = store.read_json_prefer_backend("mq-index.json", [])
+    cases = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=200)
+    index_load_ms = round((time.perf_counter() - stage_started) * 1000, 2)
+
+    keywords = tokenize(intent)
+    stage_started = time.perf_counter()
+    matched_files = _rank_sniff_files(store, file_index, keywords, limit)
+    candidate_rank_ms = round((time.perf_counter() - stage_started) * 1000, 2)
+    retrieval_mode = "graph_fts" if len(file_index) >= _LARGE_WORKSPACE_FILE_THRESHOLD and matched_files and any(item.get("symbols") for item in matched_files) else ("path_fallback" if len(file_index) >= _LARGE_WORKSPACE_FILE_THRESHOLD else "symbol_rank")
+    matched_services = sorted({item["project"] for item in matched_files})
+    related_apis = [x for x in apis if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][:limit]
+    related_feigns = [x for x in feigns if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][:limit]
+    related_mq = [x for x in mq if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][:limit]
+    related_cases = [x for x in cases if any(k in json.dumps(x, ensure_ascii=False).lower() for k in keywords)][-5:]
+    recent_sessions = store.read_jsonl_prefer_backend(SESSION_SUMMARIES_FILE, limit=30)
+    rules = match_rules(store, intent=intent, files=[x["path"] for x in matched_files])[:10]
+    sniff_risk_level = _sniff_risk_level(intent, matched_files, related_feigns, related_apis, related_mq, rules)
+    task_resolution = resolve_task_space(
+        workspace_file,
+        intent=intent,
+        create_if_missing=False,
+        limit_candidates=3,
+        related_texts=[item.get("task", "") for item in related_cases] + [item.get("summary", "") or item.get("intent", "") for item in recent_sessions],
+    )
+    auto_sync = _build_sniff_auto_sync_recommendation(store, task_resolution, sniff_risk_level, auto_sync_mode=auto_sync_mode)
+    source_refs = _build_sniff_source_refs(matched_files, related_feigns, related_apis, related_mq, related_cases)
+    write_judge_recommendation = memory_write_judge(
+        workspace_file,
+        text=intent,
+        source="sniff_intent",
+        intent=intent,
+        projects=matched_services[:5],
+        files=[item.get("path", "") for item in matched_files[:8]],
+    )
+    lookup_hint_context = {
+        "risk_level": sniff_risk_level,
+        "matched_services": matched_services,
+        "candidate_files": matched_files,
+    }
+    lookup_hint = (
+        workspace_lookup_hint(
+            workspace_file,
+            query=intent,
+            intent=intent,
+            limit=min(limit, 6),
+            sniff_context=lookup_hint_context,
+        )
+        if include_lookup_hint
+        else None
+    )
+    candidate_paths = _build_sniff_candidate_paths(
+        intent=intent,
+        risk_level=sniff_risk_level,
+        lookup_hint=lookup_hint or {},
+        task_resolution=task_resolution,
+        auto_sync=auto_sync,
+        write_judge_decision=write_judge_recommendation.get("decision", {}),
+        matched_files=matched_files,
+        related_apis=related_apis,
+        related_feigns=related_feigns,
+        related_mq=related_mq,
+    )
+    candidate_paths = apply_candidate_path_learning(workspace_file, candidate_paths)
+    recommended_path = dict(candidate_paths[0]) if candidate_paths else {}
+
+    result = {
+        "workspace": config.workspace,
+        "intent": intent,
+        "risk_level": sniff_risk_level,
+        "matched_services": matched_services,
+        "candidate_files": matched_files,
+        "related_apis": related_apis,
+        "related_feigns": related_feigns,
+        "related_mq": related_mq,
+        "related_rules": rules,
+        "historical_cases": related_cases,
+        "task_candidates": task_resolution.get("candidates", []),
+        "source_refs": source_refs,
+        "resolved_task": {
+            key: task_resolution.get(key)
+            for key in [
+                "resolved",
+                "task_id",
+                "title",
+                "status",
+                "owner",
+                "tags",
+                "priority",
+                "score",
+                "match_reasons",
+                "score_threshold",
+            ]
+        },
+        "auto_sync_recommendation": auto_sync,
+        "write_judge_recommendation": write_judge_recommendation.get("decision", {}),
+        "lookup_hint": {
+            "recommended_path": lookup_hint.get("recommended_path", "") if lookup_hint else "",
+            "preferred_tools": lookup_hint.get("preferred_tools", []) if lookup_hint else [],
+            "should_use_memory_center": lookup_hint.get("should_use_memory_center", False) if lookup_hint else False,
+            "reasons": lookup_hint.get("reasons", []) if lookup_hint else [],
+        },
+        "candidate_paths": candidate_paths,
+        "recommended_path": recommended_path,
+        "symbolic_context": _build_sniff_symbolic_context(intent, sniff_risk_level, matched_services, matched_files, related_feigns, related_apis, related_mq, related_cases),
+        "next_steps": [
+            '先用 mc_lookup(query="...", mode="code") 缩小入口范围，再用 mc_lookup(query="...", mode="symbol") 定位关键符号',
+            '对关键符号用 mc_lookup(query="...", mode="chain", chain_direction="callers/callees") 理清上下游调用链',
+            '先用 mc_admin(action="write_judge") / mc_admin(action="write_plan") 判断信息应写入 L0/L1/L2/L3，再执行对应写入',
+            '如果这是持续任务或多人协作任务，用 mc_sync(intent="...", auto_sync_mode="balanced") 把 context/plan 写入任务空间',
+            '改动前用 mc_analyze(target="...", depth="standard/full") 明确风险与验证项',
+            '如果涉及 DTO/Feign/MQ Message，用 mc_analyze(target="...", depth="full", contract_file="...")',
+            '长任务建议用 mc_admin(action="session_log", ...) 记录关键步骤，结束后用 mc_close(session_id="...", record_case=True) 沉淀案例',
+        ],
+        "performance": {
+            "total_ms": round((time.perf_counter() - started_at) * 1000, 2),
+            "index_load_ms": index_load_ms,
+            "candidate_rank_ms": candidate_rank_ms,
+            "deadline_ms": max(100, deadline_ms),
+            "partial": (time.perf_counter() - started_at) * 1000 > max(100, deadline_ms),
+            "cache_hit": False,
+            "retrieval_mode": retrieval_mode,
+        },
+    }
+    if _is_compact_view(view):
+        compact = _compact_sniff_result(result, budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "workspace_sniff", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        result = compact
+    _SNIFF_CACHE[cache_key] = (time.monotonic() + _SNIFF_CACHE_TTL_SECONDS, deepcopy(result))
+    return result
+
+
+def _sniff_cache_key(store: WorkspaceStore, intent: str, limit: int, auto_sync_mode: str, include_lookup_hint: bool, view: str, budget: str, deadline_ms: int) -> tuple[object, ...]:
+    def fingerprint(path: Path) -> tuple[int, int]:
+        try:
+            stat = path.stat()
+            return stat.st_mtime_ns, stat.st_size
+        except OSError:
+            return 0, 0
+
+    return (
+        str(store.workspace_file), intent, limit, auto_sync_mode, include_lookup_hint, view, budget, deadline_ms,
+        fingerprint(store.index_dir / "file-index.json"), fingerprint(store.graph_db_path), fingerprint(store.artifacts_dir / "tasks"),
+    )
+
+
+def _rank_sniff_files(
+    store: WorkspaceStore,
+    file_index: list[dict[str, Any]],
+    keywords: list[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Use graph FTS for large workspaces before loading the full symbol JSON.
+
+    The symbol index is intentionally rich and can be hundreds of MB. A task
+    startup only needs a few candidate files, so FTS is both sufficient and
+    substantially cheaper. Small workspaces retain the legacy in-memory ranker
+    to preserve its broad matching behaviour.
+    """
+    if len(file_index) >= _LARGE_WORKSPACE_FILE_THRESHOLD and keywords:
+        graph_hits = _rank_sniff_files_from_graph(store, keywords, limit)
+        if graph_hits:
+            return graph_hits
+        return _rank_sniff_paths(file_index, keywords, limit)
+    symbols = store.read_json_prefer_backend("java-symbol-index.json", [])
+    return rank_files(file_index, symbols, keywords)[:limit]
+
+
+def _rank_sniff_paths(file_index: list[dict[str, Any]], keywords: list[str], limit: int) -> list[dict[str, Any]]:
+    """Cheap large-workspace fallback when graph FTS has no lexical hit."""
+    ranked: list[dict[str, Any]] = []
+    for item in file_index:
+        path = str(item.get("path", "") or "")
+        lowered = path.lower()
+        score = sum(1 for keyword in keywords if keyword in lowered)
+        if score <= 0:
+            continue
+        ranked.append({**item, "score": score, "symbols": []})
+    ranked.sort(key=lambda item: (-int(item["score"]), str(item.get("path", ""))))
+    return ranked[: max(1, limit)]
+
+
+def _rank_sniff_files_from_graph(
+    store: WorkspaceStore,
+    keywords: list[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    query = " ".join(keywords[:8])
+    try:
+        with RuntimeStore(store.graph_db_path) as graph:
+            nodes = graph.find_nodes(
+                query,
+                types=["File", "Class", "Interface", "Method", "Endpoint", "FeignClient", "FeignMethod", "MQConsumer"],
+                limit=max(20, min(120, max(1, limit) * 12)),
+            )
+    except Exception:
+        return []
+
+    ranked: dict[str, dict[str, Any]] = {}
+    for node in nodes:
+        metadata = node.get("metadata", {}) or {}
+        path = str(node.get("file_path", "") or metadata.get("path", "") or "")
+        if not path:
+            continue
+        searchable = " ".join(
+            [
+                path,
+                str(node.get("name", "") or ""),
+                str(node.get("project", "") or ""),
+                str(metadata.get("service_name", "") or ""),
+            ]
+        ).lower()
+        score = sum(1 for keyword in keywords if keyword in searchable)
+        if score <= 0:
+            score = 1
+        item = ranked.setdefault(
+            path,
+            {
+                "project": str(node.get("project", "") or metadata.get("project", "") or ""),
+                "service_name": str(metadata.get("service_name", "") or node.get("project", "") or ""),
+                "path": path,
+                "suffix": str(metadata.get("suffix", "") or Path(path).suffix),
+                "score": 0,
+                "symbols": [],
+            },
+        )
+        item["score"] = max(int(item["score"]), score)
+        if node.get("type") in {"Class", "Interface", "Method"}:
+            item["symbols"].append({"name": node.get("name", ""), "type": node.get("type", "")})
+    return sorted(ranked.values(), key=lambda item: (-int(item["score"]), item["path"]))[: max(1, limit)]
+
+
+def workspace_trace(workspace_file: str | Path, entry: str) -> dict[str, Any]:
+    _, store = load_context(workspace_file)
+    topology = store.read_json_prefer_backend("service-topology.json", {})
+    apis = store.read_json_prefer_backend("api-index.json", [])
+    feigns = store.read_json_prefer_backend("feign-index.json", [])
+    mq = store.read_json_prefer_backend("mq-index.json", [])
+    entry_lower = entry.lower()
+    symbol_hint = _extract_symbol_like_token(entry)
+    deep_trace = _wants_deep_chain(entry)
+    result = {
+        "entry": entry,
+        "trace_mode": "index_overview",
+        "trace_scope": "cross_service_hints",
+        "trace_note": "workspace_trace 返回索引级概览，不保证完整调用链；完整链路请优先使用 mc_lookup(mode='chain')。",
+        "suggested_symbol": symbol_hint,
+        "suggested_followup": "mc_lookup(mode='chain')" if symbol_hint or deep_trace else "mc_lookup(mode='context')",
+        "matched_feign_edges": [x for x in topology.get("feign_edges", []) if entry_lower in json.dumps(x, ensure_ascii=False).lower()],
+        "matched_apis": [x for x in apis if entry_lower in json.dumps(x, ensure_ascii=False).lower()],
+        "matched_feigns": [x for x in feigns if entry_lower in json.dumps(x, ensure_ascii=False).lower()],
+        "matched_mq": [x for x in mq if entry_lower in json.dumps(x, ensure_ascii=False).lower()],
+        "topology_hint": topology,
+    }
+    if deep_trace and symbol_hint:
+        depth = 4
+        result["chain_preview"] = {
+            "symbol": symbol_hint,
+            "depth": depth,
+            "callers": memory_callers(workspace_file, symbol_hint, depth=depth, limit=40, view="compact", budget="small"),
+            "callees": memory_callees(workspace_file, symbol_hint, depth=depth, limit=40, view="compact", budget="small"),
+        }
+        result["suggested_followup"] = "mc_lookup(mode='chain', chain_direction='callers|callees')"
+    return result
+
+
+def _extract_symbol_like_token(text: str) -> str:
+    matches = _JAVA_CHAIN_SYMBOL_RE.findall((text or "").strip())
+    if not matches:
+        return ""
+    matches.sort(key=len, reverse=True)
+    return matches[0]
+
+
+def _wants_deep_chain(text: str) -> bool:
+    normalized = (text or "").lower()
+    return any(token in normalized for token in ["全链路", "到底层", "最底层", "一路到底", "full chain", "trace to sink"])
+
+
+def workspace_lookup_hint(
+    workspace_file: str | Path,
+    query: str,
+    intent: str = "",
+    limit: int = 8,
+    sniff_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    config, store = load_context(workspace_file)
+    normalized = f"{query} {intent}".strip().lower()
+    reasons: list[str] = []
+    preferred_tools: list[str] = []
+    recommended_path = "local_search"
+    should_use_memory_center = False
+
+    # A pure CamelCase symbol name (method/class) with no suffix keyword still
+    # means "find this symbol", and symbol lookup hits it precisely, whereas
+    # file-level code search only returns the containing file. Real-workspace
+    # evidence: a bare method name such as `getOrderStateForApp` was misrouted
+    # to local_search/code and never surfaced the Method node, although 20+
+    # graph edges hang off that symbol.
+    camel_suffix_tokens = [
+        "service", "controller", "client", "facade", "manager", "mapper",
+        "handler", "listener", "consumer", "producer", "config", "util",
+        "helper", "task", "job", "dto", "vo", "entity", "impl",
+    ]
+    camel_verb_prefixes = ("get", "set", "is", "has", "build", "create", "query", "find", "submit", "send", "handle", "run", "do", "apply", "check", "update", "delete", "save")
+    words = re.findall(r"[a-zA-Z][a-zA-Z0-9_]{1,60}", normalized)
+    looks_like_camel_symbol = any(
+        len(word) >= 8
+        and (
+            any(word.lower().endswith(tok) for tok in camel_suffix_tokens)
+            or word.lower().startswith(camel_verb_prefixes)
+        )
+        for word in words
+    )
+
+    if any(token in normalized for token in ["controller", "service", "client", "feign", "dto", "entity", "mapper", "consumer", "producer", "topic", "config", "class", "method", "类", "方法", "配置"]) or looks_like_camel_symbol:
+        preferred_tools = ["memory_symbol_tool", "memory_search_code_tool"]
+        recommended_path = "symbol_lookup"
+        should_use_memory_center = True
+        reasons.append("查询看起来在找类、方法、Feign、Topic 或配置项，优先走符号/索引检索更稳。")
+
+    if any(token in normalized for token in ["谁调用", "调用链", "caller", "callee", "upstream", "downstream", "依赖", "链路"]):
+        preferred_tools = ["memory_callers_tool", "memory_callees_tool", "workspace_trace_tool"]
+        recommended_path = "call_chain"
+        should_use_memory_center = True
+        reasons.append("查询包含调用链或依赖分析语义，适合先走图谱链路工具。")
+
+    if any(token in normalized for token in ["跨服务", "影响", "风险", "契约", "mq", "kafka", "rocketmq", "api", "接口"]) and recommended_path != "symbol_lookup":
+        preferred_tools = ["workspace_sniff_tool", "memory_impact_tool", "memory_context_tool"]
+        recommended_path = "cross_service_analysis"
+        should_use_memory_center = True
+        reasons.append("查询涉及跨服务、契约或风险分析，Memory Center 的上下文价值更高。")
+
+    if not preferred_tools and any(token in normalized for token in ["文件", "路径", "字符串", "关键字", "grep", "文本"]):
+        preferred_tools = ["memory_search_code_tool"]
+        recommended_path = "keyword_lookup"
+        should_use_memory_center = True
+        reasons.append("查询偏关键词入口定位，先走代码索引检索通常比全仓库扫描更省上下文。")
+
+    if not preferred_tools:
+        preferred_tools = ["local_search", "memory_search_code_tool"]
+        reasons.append("查询更像局部实现细节确认，可先本地搜索；若范围扩大，再切到 Memory Center。")
+
+    if sniff_context is None:
+        sniff = workspace_sniff(workspace_file, query or intent, limit=min(limit, 6), include_lookup_hint=False)
+    else:
+        sniff = sniff_context
+    candidate_paths = _build_lookup_hint_candidate_paths(
+        recommended_path=recommended_path,
+        preferred_tools=preferred_tools,
+        reasons=reasons,
+        sniff=sniff,
+    )
+    candidate_paths = apply_candidate_path_learning(workspace_file, candidate_paths)
+    return with_schema(
+        "lookup_hint",
+        {
+            "workspace": config.workspace,
+            "query": query,
+            "intent": intent,
+            "recommended_path": recommended_path,
+            "recommended_candidate_path": dict(candidate_paths[0]) if candidate_paths else {},
+            "candidate_paths": candidate_paths,
+            "preferred_tools": preferred_tools,
+            "reasons": reasons,
+            "should_use_memory_center": should_use_memory_center,
+            "sniff_risk_level": sniff.get("risk_level", ""),
+            "matched_services": sniff.get("matched_services", [])[:5],
+            "candidate_files": sniff.get("candidate_files", [])[:5],
+            "fallback": "若推荐结果不足以定位，再退回本地 grep / rg 做小范围确认。",
+        },
+    )
+
+
+def workspace_dashboard(
+    workspace_file: str | Path,
+    intent: str = "",
+    limit: int = 10,
+    view: str = "compact",
+    budget: str = "medium",
+    session_id: str = "",
+    task_id: str = "",
+) -> dict[str, Any]:
+    # Lazy import to avoid circular dependency with .resume and .eval
+    from ..tasks.delivery import delivery_workflow_status
+    from ..tasks.timeline import timeline_query
+    from .evaluations import (
+        memory_eval_agent_guidance,
+        memory_eval_agent_guidance_adoption,
+        memory_eval_resume,
+        memory_eval_write_quality,
+    )
+
+    status = workspace_status(workspace_file, view="full", budget=budget)
+    active_tasks = status.get("active_task_spaces", [])[: max(limit, 1)]
+    low_quality_tasks: list[dict[str, Any]] = []
+    resumable_tasks: list[dict[str, Any]] = []
+    blocked_tasks: list[dict[str, Any]] = []
+
+    for task in active_tasks:
+        task_id = str(task.get("task_id", "") or "")
+        title = str(task.get("title", "") or "")
+        summary_preview = str(task.get("summary_preview", "") or "")
+        quality = memory_eval_write_quality(workspace_file, task_id=task_id, intent=title or summary_preview, limit=10)
+        entry = {
+            "task_id": task_id,
+            "title": title,
+            "status": task.get("status", ""),
+            "priority": task.get("priority", ""),
+            "quality": quality.get("quality", ""),
+            "score": quality.get("score", 0),
+            "receipt_count": quality.get("receipt_count", 0),
+            "summary_preview": summary_preview,
+            "delivery": delivery_workflow_status(workspace_file, task_id),
+        }
+        if task.get("status") == "blocked":
+            blocked_tasks.append(entry)
+        if summary_preview:
+            resumable_tasks.append(entry)
+        if quality.get("quality") != "high":
+            low_quality_tasks.append(entry)
+
+    timeline = timeline_query(str(workspace_file), kinds=["write_receipt", "handoff"], limit=limit * 3).get("timeline", [])
+    receipts = [item for item in timeline if item.get("kind") == "write_receipt"][-limit:]
+    handoffs = [item.get("raw", item) for item in timeline if item.get("kind") == "handoff"][-limit:]
+    # Session-first（P0-2）：dashboard 焦点同样只来自显式 task/session 绑定。
+    focus = resolve_session_focus(workspace_file, task_id=task_id, session_id=session_id, active_tasks=active_tasks)
+    focus_task = _project_focus_task(focus, active_tasks)
+    focus_dashboard = (
+        workspace_continuity_dashboard(
+            workspace_file,
+            intent=intent,
+            task_id=str(focus.get("task_id", "") or ""),
+            session_id=session_id,
+            limit=min(limit, 5),
+            view=view,
+            budget=budget,
+        )
+        if focus_task
+        else None
+    )
+    focus_resume_eval = memory_eval_resume(
+        workspace_file,
+        task_id=str(focus.get("task_id", "") or ""),
+        intent=intent,
+        limit=min(limit, 10),
+    )
+    focus_delivery = delivery_workflow_status(workspace_file, str(focus.get("task_id", "") or "")) if focus_task else None
+    usage_report = memory_tool_usage_report(workspace_file, limit=max(limit * 10, 50))
+    agent_guidance_eval = memory_eval_agent_guidance(workspace_file, intent=intent, limit=limit)
+    agent_guidance_adoption = memory_eval_agent_guidance_adoption(workspace_file, limit=max(limit * 10, 50))
+    result = with_schema(
+        "workspace_dashboard",
+        {
+        "workspace": status.get("workspace", ""),
+        "focus": focus,
+        "focus_task": focus_task,
+        "focus_state_note": _focus_state_note(focus),
+        "continuity_overview": status.get("continuity_overview", {}),
+        "write_receipts_overview": status.get("write_receipts_overview", {}),
+        "active_tasks": active_tasks,
+        "resumable_tasks": resumable_tasks[:limit],
+        "blocked_tasks": blocked_tasks[:limit],
+        "low_quality_tasks": sorted(low_quality_tasks, key=lambda item: (item.get("score", 0), item.get("task_id", "")))[:limit],
+        "recent_receipts": receipts,
+        "recent_handoffs": handoffs,
+        "focus_dashboard": focus_dashboard,
+        "focus_resume_eval": focus_resume_eval,
+        "focus_delivery": focus_delivery,
+        "tool_usage_report": {
+            "summary": usage_report.get("summary", {}),
+            "lookup_tool_counts": usage_report.get("lookup_tool_counts", {}),
+            "suspected_bypass": usage_report.get("suspected_bypass", [])[:5],
+            "adoption_hints": usage_report.get("adoption_hints", []),
+        },
+        "agent_guidance": {
+            "quality": agent_guidance_eval.get("quality", ""),
+            "score": agent_guidance_eval.get("score", 0),
+            "passed": agent_guidance_eval.get("passed", False),
+            "agent_next_step_count": agent_guidance_eval.get("agent_next_step_count", 0),
+            "agent_next_step_actions": agent_guidance_eval.get("agent_next_step_actions", []),
+            "invalid_search_suggestion_count": agent_guidance_eval.get("invalid_search_suggestion_count", 0),
+            "adoption": agent_guidance_adoption.get("summary", {}),
+            "findings": agent_guidance_eval.get("findings", []),
+        },
+        },
+    )
+    if _is_compact_view(view):
+        compact = _compact_workspace_dashboard(result, budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "workspace_dashboard", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
+    return result
+
+
+def workspace_workbench_summary(
+    workspace_file: str | Path,
+    limit: int = 5,
+    session_id: str = "",
+    task_id: str = "",
+) -> dict[str, Any]:
+    """Return the bounded, latency-sensitive DSH workbench landing projection.
+
+    This deliberately avoids dashboard-only quality/replay calculations and the
+    full continuity packet. Those remain explicit secondary-view reads.
+
+    Session-first（P0-2/P0-3）：焦点来自显式 ``task_id``、当前 ``session_id``
+    的可信绑定或其 Task Shadow；没有可信锚点时 ``focus.kind="none"``，
+    绝不回退 ``active_tasks[0]``。
+    """
+    from .resume import workspace_next_actions
+    from .session import workspace_recent_sessions
+
+    status = workspace_status(workspace_file, view="compact", budget="small")
+    active_tasks = list(status.get("active_task_spaces") or [])[:limit]
+    focus = resolve_session_focus(workspace_file, task_id=task_id, session_id=session_id, active_tasks=active_tasks)
+    focus_task = _project_focus_task(focus, active_tasks)
+    resolved_task_id = str(focus.get("task_id", "") or "")
+    actions = workspace_next_actions(workspace_file, task_id=resolved_task_id, limit=limit).get("actions", []) if resolved_task_id else []
+    receipts = workspace_write_receipts(workspace_file, task_id=resolved_task_id, limit=limit).get("receipts", [])
+    sessions = workspace_recent_sessions(workspace_file, limit=limit).get("recent_sessions", [])
+    continuity = status.get("continuity_overview") or {}
+    continuity = {**continuity, "focus_task_id": resolved_task_id} if resolved_task_id else continuity
+    return {
+        "schema_version": 1,
+        "kind": "workspace_workbench_summary",
+        "workspace": status.get("workspace", ""),
+        "session_id": session_id,
+        "focus": focus,
+        "focus_task": focus_task,
+        "focus_state_note": _focus_state_note(focus),
+        "active_tasks": active_tasks,
+        "resumable_tasks": active_tasks,
+        "blocked_tasks": [task for task in active_tasks if task.get("status") == "blocked"],
+        "continuity_overview": continuity,
+        "next_actions": actions[:limit],
+        "recent_receipts": receipts[-limit:],
+        "recent_sessions": sessions[:limit],
+        "health": {
+            "index_summary_status": status.get("index_summary_status", "unknown"),
+            "hot_refresh": status.get("hot_refresh", {}),
+            "workspace_warnings": status.get("workspace_warnings", [])[:3],
+        },
+        "performance_boundary": "landing_summary_only",
+    }
+
+
+def workspace_continuity_dashboard(
+    workspace_file: str | Path,
+    intent: str = "",
+    task_id: str = "",
+    session_id: str = "",
+    limit: int = 10,
+    view: str = "compact",
+    budget: str = "medium",
+) -> dict[str, Any]:
+    # Lazy import to avoid circular dependency with .resume
+    from .resume import (
+        workspace_handoff_history,
+        workspace_next_actions,
+        workspace_resume_packet,
+        workspace_unresolved_items,
+    )
+    # P0-2：task_id 参数语义是"用户显式选择的任务详情"，不再隐式回退全局焦点。
+    if not task_id and not session_id:
+        return with_schema(
+            "workspace_continuity_dashboard",
+            {
+                "workspace": _workspace_name(workspace_file),
+                "session_id": "",
+                "focus": {"kind": "none", "task_id": "", "shadow_id": "", "binding_mode": "none", "binding_reason_code": "no_session_context", "is_current_session_bound": False},
+                "focus_task": None,
+                "focus_state_note": _focus_state_note({"kind": "none"}),
+                "continuity_overview": {},
+                "resume_packet": {},
+                "next_actions": [],
+                "unresolved_items": [],
+                "recent_receipts": [],
+                "recent_handoffs": [],
+                "recent_evidence": [],
+            },
+        )
+
+    status = workspace_status(workspace_file, view="compact", budget=budget)
+    # Session-first（P0-2）：焦点优先显式 task_id，其次 session 可信绑定；
+    # 未绑定时不从 active_tasks[0] 补焦点。
+    focus = resolve_session_focus(workspace_file, task_id=task_id, session_id=session_id)
+    focus_task_id = str(focus.get("task_id", "") or "")
+    resume_packet = workspace_resume_packet(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit, view=view, budget=budget)
+    next_actions = workspace_next_actions(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit)
+    unresolved = workspace_unresolved_items(workspace_file, task_id=focus_task_id, session_id=session_id, intent=intent, limit=limit)
+    receipts = workspace_write_receipts(workspace_file, task_id=focus_task_id, session_id=session_id, limit=limit)
+    handoffs = workspace_handoff_history(workspace_file, task_id=focus_task_id, session_id=session_id, limit=limit)
+    evidence = workspace_recent_evidence(workspace_file, task_id=focus_task_id, session_id=session_id, limit=limit, budget=budget)
+    result = with_schema(
+        "workspace_continuity_dashboard",
+        {
+        "workspace": status.get("workspace", ""),
+        "session_id": session_id,
+        "focus": focus,
+        "focus_task": _project_focus_task(focus, list(status.get("active_task_spaces") or [])),
+        "focus_state_note": _focus_state_note(focus),
+        "continuity_overview": status.get("continuity_overview", {}),
+        "resume_packet": resume_packet,
+        "next_actions": next_actions.get("actions", []),
+        "unresolved_items": unresolved.get("items", []),
+        "recent_receipts": receipts.get("receipts", [])[-5:],
+        "recent_handoffs": handoffs.get("handoffs", [])[-5:],
+        "recent_evidence": evidence.get("evidence", [])[-5:],
+        },
+    )
+    if _is_compact_view(view):
+        compact = _compact_continuity_dashboard(result, budget=budget)
+        gain = _measure_compact_gain(result, compact)
+        log_token_gain(workspace_file, "workspace_continuity_dashboard", budget=budget, model="", raw_tokens=gain["raw_tokens"], compact_tokens=gain["compact_tokens"], view=view)
+        return compact
+    return result
+
+
+_TASK_STALE_AFTER_DAYS = 14
+
+
+def _workspace_name(workspace_file: str | Path) -> str:
+    from .shared import load_context
+
+    try:
+        config, _ = load_context(workspace_file)
+        return config.workspace
+    except Exception:
+        return ""
+
+
+def _task_effective_status(status: str, updated_at: str) -> str:
+    """活跃度展示状态（P0 误绑定修复配套）：active 任务超过 14 天无任何
+    task-space 活动即标注 stale。只影响展示与排序，不改写 meta.json。"""
+    normalized = str(status or "").strip().lower()
+    if normalized != "active" or not updated_at:
+        return normalized
+    try:
+        age_days = (datetime.now() - datetime.fromisoformat(updated_at)).days
+    except (TypeError, ValueError):
+        return normalized
+    return "stale" if age_days >= _TASK_STALE_AFTER_DAYS else normalized
+
+
+_FOCUS_BINDING_MODES = ("explicit", "auto_direct_anchor", "shadow_only", "none")
+
+
+def resolve_session_focus(
+    workspace_file: str | Path,
+    *,
+    task_id: str = "",
+    session_id: str = "",
+    active_tasks: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Session-aware 焦点解析（P0-2，Session-first 提案）。
+
+    优先级固定为：显式请求的 task_id > 当前 session 已记录且可信的
+    task_binding.task_id > 当前 session 的未绑定 Task Shadow > 无焦点。
+    禁止回退到 ``active_tasks[0]``：工作区排序结果不能冒充会话事实。
+    返回 additive ``focus`` 结构；旧字段由调用方按 ``focus.kind`` 投影。
+    """
+    resolved_task_id = str(task_id or "").strip()
+    binding_mode = "none"
+    binding_reason_code = "no_session_context"
+    kind = "none"
+    shadow_id = ""
+    if resolved_task_id:
+        # 显式请求的 task_id 仅用于用户明确选择的详情页/恢复动作。
+        kind = "task"
+        binding_mode = "explicit"
+        binding_reason_code = "explicit_task_id"
+    elif session_id:
+        session_binding = _load_session_task_binding(workspace_file, session_id)
+        bound_task = str(session_binding.get("task_id", "") or "").strip()
+        binding_mode_raw = str(session_binding.get("mode", "") or "").strip()
+        if bound_task and binding_mode_raw in ("explicit", "auto_direct_anchor"):
+            kind = "task"
+            resolved_task_id = bound_task
+            binding_mode = binding_mode_raw
+            binding_reason_code = "explicit_task_id" if binding_mode_raw == "explicit" else "direct_anchor"
+        else:
+            shadow_id = _resolve_session_shadow(workspace_file, session_id)
+            if shadow_id:
+                kind = "shadow"
+                binding_mode = "shadow_only"
+                binding_reason_code = "auto_binding_disabled" if not bound_task else "ambiguous_candidate"
+    focus = {
+        "kind": kind,
+        "task_id": resolved_task_id if kind == "task" else "",
+        "shadow_id": shadow_id,
+        "binding_mode": binding_mode if kind != "none" else "none",
+        "binding_reason_code": binding_reason_code if kind != "none" else "no_session_context",
+        "is_current_session_bound": kind == "task" and binding_mode in ("explicit", "auto_direct_anchor"),
+    }
+    # active_tasks 仅用于校验显式 task 仍存在；绝不从中挑选焦点。
+    if kind == "task" and active_tasks is not None:
+        known_ids = {str(item.get("task_id", "") or "") for item in active_tasks}
+        if resolved_task_id not in known_ids:
+            focus["task_missing_from_active_list"] = True
+    return focus
+
+
+def _load_session_task_binding(workspace_file: str | Path, session_id: str) -> dict[str, Any]:
+    """读取 session 启动事件里记录的 task_binding 元数据（可信绑定来源）。"""
+    from .session import _session_events
+    from .shared import SESSION_EVENTS_FILE, load_context
+
+    try:
+        _, store = load_context(workspace_file)
+        events = _session_events(store, session_id)
+    except Exception:
+        return {}
+    for event in events:
+        if str(event.get("event_type", "") or "") != "session_start":
+            continue
+        payload = event.get("payload") or {}
+        binding = payload.get("task_binding") if isinstance(payload, dict) else None
+        if isinstance(binding, dict):
+            return binding
+    return {}
+
+
+def _resolve_session_shadow(workspace_file: str | Path, session_id: str) -> str:
+    """解析 session 当前绑定的 Shadow；未注册返回空串（不回退派生）。
+
+    MC 内部 session（source kind=memory-center）与 DSH bridge 透传的
+    session（source kind=dsh）是两条注册路径，都查一遍。
+    """
+    from memory_center.core.tasks.shadow import bound_shadow_for_source
+    from .shared import load_context
+
+    try:
+        _, store = load_context(workspace_file)
+        for source_kind in ("memory-center", "dsh"):
+            shadow_id = str(bound_shadow_for_source(store, source_kind, session_id) or "")
+            if shadow_id:
+                return shadow_id
+        return ""
+    except Exception:
+        return ""
+
+
+def _project_focus_task(focus: dict[str, Any], active_tasks: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """按 focus.kind 投影旧字段 ``focus_task``：仅在 kind=task 时非空。"""
+    if focus.get("kind") != "task":
+        return None
+    task_id = str(focus.get("task_id", "") or "")
+    for item in active_tasks:
+        if str(item.get("task_id", "") or "") == task_id:
+            projected = dict(item)
+            projected["focus_reason"] = _build_focus_reason(projected)
+            return projected
+    return None
+
+
+def _focus_state_note(focus: dict[str, Any]) -> str:
+    kind = str(focus.get("kind", "none") or "none")
+    if kind == "task":
+        return "当前焦点任务来自本 session 的可信绑定。"
+    if kind == "shadow":
+        return "当前工作尚未绑定工程任务；历史任务仅作为可恢复候选展示。"
+    return "未连接当前会话；不展示任何任务为当前焦点。"
+
+
+def _active_task_summaries(workspace_file: str | Path, limit: int = 5) -> list[dict[str, Any]]:
+    tasks = list_task_spaces(workspace_file, include_archived=False).get("active_tasks", [])
+    for item in tasks:
+        item["effective_status"] = _task_effective_status(str(item.get("status", "")), str(item.get("updated_at", "")))
+    sorted_tasks = sorted(
+        tasks,
+        key=lambda item: (
+            0 if item.get("effective_status") == "active" else 1,
+            -(datetime.fromisoformat(item.get("updated_at", datetime.min.isoformat())).timestamp() if item.get("updated_at") else 0),
+            item.get("task_id", ""),
+        ),
+    )
+    rows = []
+    for item in sorted_tasks[:limit]:
+        try:
+            summary = get_task_artifact(
+                workspace_file,
+                str(item.get("task_id", "")),
+                "current_summary",
+                max_bytes=16 * 1024,
+            ).get("content", "")
+        except Exception:
+            summary = ""
+        rows.append(
+            {
+                "task_id": item.get("task_id", ""),
+                "title": item.get("title", ""),
+                "status": item.get("effective_status", ""),
+                "registered_status": item.get("status", ""),
+                "owner": item.get("owner", ""),
+                "tags": item.get("tags", []),
+                "priority": item.get("priority", "medium"),
+                "updated_at": item.get("updated_at", ""),
+                "summary_preview": _trim_summary(summary),
+                "last_activity_source": item.get("last_activity_source", ""),
+            }
+        )
+    return rows
+
+
+def _build_memory_layers(config, store: WorkspaceStore, active_tasks: list[dict[str, Any]]) -> dict[str, Any]:
+    refs_count = sum(1 for _ in store.refs_dir.rglob("*") if _.is_file()) if store.refs_dir.exists() else 0
+    case_rows = store.read_jsonl_prefer_backend("cross-service-task-memory.jsonl", limit=5000)
+    # current truth 以决策行投影为准（G1），不再直接相信存储字段
+    decision_rows = store.read_jsonl_prefer_backend(CASE_DECISIONS_FILE, limit=5000)
+    latest_case_decisions = {
+        str(row.get("case_id", "") or ""): row
+        for row in decision_rows
+        if str(row.get("case_id", "") or "").strip()
+    }
+    case_projection = project_case_truth(case_rows, decision_rows)
+
+    def _projected_truth(item: dict[str, Any]) -> bool:
+        return bool(
+            case_projection.get(
+                str(item.get("case_id", "") or ""),
+                item.get("current_truth", True),
+            )
+        )
+
+    current_truth_cases = sum(1 for item in case_rows if _projected_truth(item))
+    superseded_cases = sum(
+        1
+        for item in case_rows
+        if not _projected_truth(item)
+        and (
+            item.get("superseded_by")
+            or latest_case_decisions.get(str(item.get("case_id", "") or ""), {}).get("decision") == "supersede"
+        )
+    )
+    note_rows = store.read_jsonl_prefer_backend(SESSION_NOTES_FILE, limit=5000)
+    note_statuses = project_note_statuses(
+        note_rows,
+        store.read_jsonl_prefer_backend(SESSION_NOTE_DECISIONS_FILE, limit=5000),
+    )
+    active_note_count = sum(
+        1
+        for item in note_rows
+        if note_statuses.get(str(item.get("note_id", "")), item.get("status", "active")) == "active"
+    )
+    instruction_targets = [
+        config.root_path / "AGENTS.md",
+        config.root_path / "CLAUDE.md",
+        config.root_path / "GEMINI.md",
+        config.root_path / ".github" / "copilot-instructions.md",
+        config.root_path / ".cursor" / "rules" / "memory-center.mdc",
+    ]
+    instruction_count = sum(1 for path in instruction_targets if path.exists())
+    return {
+        LAYER_L0: {
+            "description": "原始会话事件与外置 payload 引用",
+            "event_count": len(store.read_jsonl_prefer_backend(SESSION_EVENTS_FILE, limit=5000)),
+            "ref_count": refs_count,
+        },
+        LAYER_L0_5: {
+            "description": "Session Notes 叙事记忆（note_record 显式记录，跨任务可检索）",
+            "note_count": len(note_rows),
+            "active_note_count": active_note_count,
+        },
+        LAYER_L1: {
+            "description": "可复用任务经验原子（record-case / suggest-case）",
+            "case_count": len(case_rows),
+            "current_truth_count": current_truth_cases,
+            "superseded_count": superseded_cases,
+        },
+        LAYER_L2: {
+            "description": "任务空间工件（context/plan/design/change-log/current-summary）",
+            "active_task_space_count": len(active_tasks),
+        },
+        LAYER_L3: {
+            "description": "工作区协议、规则、拓扑与团队约束",
+            "instruction_files": instruction_count,
+            "rule_file_count": len(list(store.rules_dir.glob("*.yaml"))),
+        },
+    }
+
+
+def _build_memory_overview(memory_layers: dict[str, Any]) -> dict[str, Any]:
+    l0 = memory_layers.get(LAYER_L0, {})
+    l05 = memory_layers.get(LAYER_L0_5, {})
+    l1 = memory_layers.get(LAYER_L1, {})
+    l2 = memory_layers.get(LAYER_L2, {})
+    l3 = memory_layers.get(LAYER_L3, {})
+    return {
+        "layer_order": MEMORY_LAYER_ORDER,
+        "layer_counts": {
+            LAYER_L0: int(l0.get("event_count", 0)),
+            LAYER_L0_5: int(l05.get("active_note_count", 0)),
+            LAYER_L1: int(l1.get("case_count", 0)),
+            LAYER_L2: int(l2.get("active_task_space_count", 0)),
+            LAYER_L3: int(l3.get("rule_file_count", 0)),
+        },
+        "highlights": [
+            f"L0 events={int(l0.get('event_count', 0))}, refs={int(l0.get('ref_count', 0))}",
+            f"L0.5 notes={int(l05.get('active_note_count', 0))} active / {int(l05.get('note_count', 0))} total",
+            f"L1 cases={int(l1.get('case_count', 0))}, current_truth={int(l1.get('current_truth_count', 0))}, superseded={int(l1.get('superseded_count', 0))}",
+            f"L2 active_task_spaces={int(l2.get('active_task_space_count', 0))}",
+            f"L3 rules={int(l3.get('rule_file_count', 0))}, instructions={int(l3.get('instruction_files', 0))}",
+        ],
+    }
+
+
+def _build_write_receipts_overview(store: WorkspaceStore) -> dict[str, Any]:
+    rows = store.read_jsonl_prefer_backend(WRITE_RECEIPTS_FILE, limit=5000)
+    layers: dict[str, int] = {}
+    actions: dict[str, int] = {}
+    scopes: dict[str, int] = {}
+    for row in rows:
+        layer = str(row.get("layer", "") or "")
+        action = str(row.get("action", "") or "")
+        scope = str(row.get("scope", "") or "")
+        if layer:
+            layers[layer] = layers.get(layer, 0) + 1
+        if action:
+            actions[action] = actions.get(action, 0) + 1
+        if scope:
+            scopes[scope] = scopes.get(scope, 0) + 1
+    return {
+        "total": len(rows),
+        "layer_counts": layers,
+        "action_counts": actions,
+        "scope_counts": scopes,
+        "recent_receipts": rows[-5:],
+    }
+
+
+def _build_continuity_overview(workspace_file: str | Path, active_tasks: list[dict[str, Any]]) -> dict[str, Any]:
+    resumable = 0
+    blocked = 0
+    for task in active_tasks:
+        if task.get("summary_preview"):
+            resumable += 1
+        if task.get("status") == "blocked":
+            blocked += 1
+    # Session-first（P0-2）：工作区级视图没有 session 语境，focus_task_id
+    # 只表示"最近可恢复候选"的排序首位，不得被消费方当作当前焦点。
+    return {
+        "active_task_count": len(active_tasks),
+        "resumable_task_count": resumable,
+        "blocked_task_count": blocked,
+        "focus_task_id": "",
+        "resumable_head_task_id": active_tasks[0].get("task_id", "") if active_tasks else "",
+    }
+
+
+def _build_focus_reason(task: dict[str, Any]) -> str:
+    parts = []
+    status = str(task.get("status", "")).strip().lower()
+    if status == "active":
+        parts.append("状态为 active")
+    priority = str(task.get("priority", "")).strip().lower()
+    if priority in {"high", "critical"}:
+        parts.append(f"优先级 {priority}")
+    source = str(task.get("last_activity_source", "")).strip()
+    if source:
+        parts.append(f"最近活动来源 {source}")
+    updated_at = str(task.get("updated_at", "")).strip()
+    if updated_at:
+        parts.append(f"最近更新时间 {updated_at}")
+    return "；".join(parts) if parts else "按任务状态与最近活动综合排序。"
+
+
+def _build_core_memory_blocks_status(store: WorkspaceStore) -> dict[str, Any]:
+    blocks = []
+    filled_count = 0
+    for key, filename in CORE_MEMORY_BLOCKS.items():
+        content = store.read_artifact(filename, "")
+        has_custom_content = "## Content" in content and "Fill" not in content.split("## Content", 1)[1]
+        if has_custom_content:
+            filled_count += 1
+        blocks.append(
+            {
+                "name": key,
+                "file": filename,
+                "exists": store.artifact_exists(filename),
+                "filled": has_custom_content,
+                "preview": content.splitlines()[:4],
+            }
+        )
+    return {
+        "block_count": len(blocks),
+        "filled_count": filled_count,
+        "blocks": blocks,
+    }
+
+
+def _build_sniff_symbolic_context(
+    intent: str,
+    risk_level: str,
+    matched_services: list[str],
+    matched_files: list[dict[str, Any]],
+    related_feigns: list[dict[str, Any]],
+    related_apis: list[dict[str, Any]],
+    related_mq: list[dict[str, Any]],
+    related_cases: list[dict[str, Any]],
+) -> dict[str, Any]:
+    service_nodes = [item for item in matched_services[:4] if item]
+    file_nodes = [Path(item.get("path", "")).name for item in matched_files[:4] if item.get("path")]
+    feign_nodes = [item.get("interface", "") for item in related_feigns[:3] if item.get("interface")]
+    api_nodes = [f"{item.get('http_method', '')} {item.get('path', '')}".strip() for item in related_apis[:3] if item.get("path")]
+    mq_nodes = [item.get("topic", "") for item in related_mq[:3] if item.get("topic")]
+    case_nodes = [item.get("task", "") for item in related_cases[-2:] if item.get("task")]
+    lines = ["flowchart LR", '  I["Intent"]']
+    for idx, service in enumerate(service_nodes, start=1):
+        node_id = f"S{idx}"
+        lines.append(f'  {node_id}["Service: {service}"]')
+        lines.append(f"  I --> {node_id}")
+    for idx, name in enumerate(file_nodes, start=1):
+        node_id = f"F{idx}"
+        lines.append(f'  {node_id}["File: {name}"]')
+        lines.append(f"  I --> {node_id}")
+    for idx, name in enumerate(feign_nodes, start=1):
+        node_id = f"G{idx}"
+        lines.append(f'  {node_id}["Feign: {name}"]')
+        lines.append(f"  I --> {node_id}")
+    for idx, name in enumerate(api_nodes, start=1):
+        node_id = f"A{idx}"
+        lines.append(f'  {node_id}["API: {name}"]')
+        lines.append(f"  I --> {node_id}")
+    for idx, name in enumerate(mq_nodes, start=1):
+        node_id = f"M{idx}"
+        lines.append(f'  {node_id}["MQ: {name}"]')
+        lines.append(f"  I --> {node_id}")
+    for idx, name in enumerate(case_nodes, start=1):
+        node_id = f"C{idx}"
+        lines.append(f'  {node_id}["Case: {name}"]')
+        lines.append(f"  I -.-> {node_id}")
+    has_contract = bool(feign_nodes or api_nodes)
+    has_mq = bool(mq_nodes)
+    has_cases = bool(case_nodes)
+    has_config = any(token in intent.lower() for token in ["config", "nacos", "bootstrap", "application.yml", "application.yaml"])
+    flow_lines = [
+        "flowchart TD",
+        '  T["Task Intent"] --> S["mc_lookup (mode=code)"]',
+        '  S --> Y["mc_lookup (mode=symbol)"]',
+        '  Y --> C["mc_lookup (mode=chain)"]',
+    ]
+    if risk_level == "high":
+        flow_lines.extend(
+            [
+                '  C --> I["mc_analyze (depth=standard)"]',
+                '  I --> P["mc_analyze (depth=full)"]',
+                '  P --> V["mc_analyze (checklist)"]',
+            ]
+        )
+    elif risk_level == "medium":
+        flow_lines.extend(
+            [
+                '  C --> P["mc_analyze (depth=standard)"]',
+                '  P --> V["mc_analyze (checklist)"]',
+            ]
+        )
+    else:
+        flow_lines.append('  C --> V["mc_analyze (quick)"]')
+    if has_contract:
+        flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> K["mc_analyze (contract, depth=full)"]')
+        flow_lines.append('  K --> R["mc_analyze (rules)"]')
+    if has_mq:
+        flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> M["MQ compatibility review"]')
+        flow_lines.append('  M --> R["mc_analyze (rules)"]')
+    if has_config:
+        flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> G["Config diff review"]')
+        flow_lines.append('  G --> R["mc_analyze (rules)"]')
+    if not (has_contract or has_mq or has_config):
+        flow_lines.append(f'  {"P" if risk_level != "low" else "V"} --> R["mc_analyze (rules)"]')
+    if has_cases:
+        flow_lines.append('  R --> H["Review historical cases"]')
+        flow_lines.append('  H --> E["Edit & Test"]')
+    else:
+        flow_lines.append('  R --> E["Edit & Test"]')
+    flow_lines.extend(
+        [
+            '  E --> S2["mc_close (end session)"]',
+            '  S2 --> Y2["mc_close (sync case)"]',
+            '  Y2 --> W["mc_close (record case)"]',
+        ]
+    )
+    return {
+        "intent": intent,
+        "focus_entities": {
+            "services": service_nodes,
+            "files": file_nodes,
+            "feigns": feign_nodes,
+            "apis": api_nodes,
+            "mq_topics": mq_nodes,
+            "cases": case_nodes,
+        },
+        "mermaid": "\n".join(lines),
+        "entities_mermaid": "\n".join(lines),
+        "flow_mermaid": "\n".join(flow_lines),
+        "flow_flags": {
+            "risk_level": risk_level,
+            "has_contract": has_contract,
+            "has_mq": has_mq,
+            "has_config": has_config,
+            "has_cases": has_cases,
+        },
+    }
+
+
+def _build_sniff_candidate_paths(
+    *,
+    intent: str,
+    risk_level: str,
+    lookup_hint: dict[str, Any],
+    task_resolution: dict[str, Any],
+    auto_sync: dict[str, Any],
+    write_judge_decision: dict[str, Any],
+    matched_files: list[dict[str, Any]],
+    related_apis: list[dict[str, Any]],
+    related_feigns: list[dict[str, Any]],
+    related_mq: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    recommended_key = str(lookup_hint.get("recommended_path", "") or "local_search")
+    preferred_tools = list(lookup_hint.get("preferred_tools", []) or [])
+    reasons = list(lookup_hint.get("reasons", []) or [])
+    base_weight = {
+        "call_chain": 0.92,
+        "cross_service_analysis": 0.9,
+        "symbol_lookup": 0.88,
+        "keyword_lookup": 0.8,
+        "local_search": 0.7,
+    }.get(recommended_key, 0.72)
+    candidates.append(
+        {
+            "candidate_type": "lookup_path",
+            "target": recommended_key,
+            "status": "probable",
+            "weight": round(base_weight, 2),
+            "why": reasons[0] if reasons else "这是当前最可能快速缩小范围的入口。",
+            "next_action": _lookup_next_action(recommended_key),
+            "verification_cost": "low",
+            "preferred_tools": preferred_tools[:3],
+            "_learning_aliases": [
+                {"candidate_type": "lookup_path", "target": recommended_key},
+            ],
+        }
+    )
+
+    if risk_level in {"medium", "high"}:
+        related_signals = sum(bool(items) for items in [related_apis, related_feigns, related_mq])
+        candidates.append(
+            {
+                "candidate_type": "impact_analysis",
+                "target": intent,
+                "status": "probable" if risk_level == "medium" else "confirmed",
+                "weight": 0.86 if risk_level == "medium" else 0.94,
+                "why": f"当前风险等级为 {risk_level}，且已发现 {related_signals} 类跨边界信号，先做影响分析更稳。",
+                "next_action": 'mc_analyze(target="...", depth="standard/full")',
+                "verification_cost": "medium",
+                "preferred_tools": ["mc_analyze", "workspace_trace_tool"],
+                "_learning_aliases": [
+                    {"candidate_type": "impact_analysis", "target": intent},
+                ],
+            }
+        )
+
+    if task_resolution.get("resolved"):
+        candidates.append(
+            {
+                "candidate_type": "resume_task",
+                "target": task_resolution.get("task_id", ""),
+                "status": "confirmed",
+                "weight": round(max(0.6, float(task_resolution.get("score", 0.0) or 0.0)), 2),
+                "why": f"当前 intent 与现有任务 `{task_resolution.get('title', '')}` 已形成稳定匹配。",
+                "next_action": f'mc_resume(task_id="{task_resolution.get("task_id", "")}")',
+                "verification_cost": "low",
+                "preferred_tools": ["mc_resume", "mc_sync"],
+            }
+        )
+
+    if auto_sync.get("recommended"):
+        candidates.append(
+            {
+                "candidate_type": "task_sync",
+                "target": task_resolution.get("task_id", "") or "new-task-space",
+                "status": "possible",
+                "weight": 0.74,
+                "why": str(auto_sync.get("reason", "") or "当前上下文适合沉淀到任务空间，避免后续重复理解。"),
+                "next_action": 'mc_sync(intent="...", auto_sync_mode="balanced")',
+                "verification_cost": "low",
+                "preferred_tools": ["mc_sync"],
+                "_learning_aliases": [
+                    {"candidate_type": "task_sync", "target": task_resolution.get("task_id", "") or "new-task-space"},
+                ],
+            }
+        )
+
+    selected_layer = str(write_judge_decision.get("selected_layer", "") or "")
+    if selected_layer:
+        candidates.append(
+            {
+                "candidate_type": "memory_write",
+                "target": selected_layer,
+                "status": "possible",
+                "weight": 0.68,
+                "why": f"当前 intent 更适合沉淀到 {selected_layer}，便于后续复用同类决策。",
+                "next_action": 'mc_admin(action="write_plan")',
+                "verification_cost": "low",
+                "preferred_tools": ["mc_admin", "mc_sync"],
+            }
+        )
+
+    if matched_files:
+        candidates.append(
+            {
+                "candidate_type": "live_file_check",
+                "target": matched_files[0].get("path", ""),
+                "status": "possible",
+                "weight": 0.64,
+                "why": "已有候选文件，必要时可直接读取实时文件验证，不必先展开更多链路。",
+                "next_action": f'优先读取 `{matched_files[0].get("path", "")}` 实时内容',
+                "verification_cost": "low",
+                "preferred_tools": ["memory_search_code_tool", "local_search"],
+            }
+        )
+
+    return sorted(
+        candidates,
+        key=lambda item: (
+            0 if item.get("status") == "confirmed" else 1 if item.get("status") == "probable" else 2,
+            -float(item.get("weight", 0.0)),
+            item.get("candidate_type", ""),
+        ),
+    )
+
+
+def _lookup_next_action(recommended_path: str) -> str:
+    actions = {
+        "symbol_lookup": 'mc_lookup(query="...", mode="symbol")',
+        "call_chain": 'mc_lookup(query="...", mode="chain", chain_direction="callers/callees")',
+        "cross_service_analysis": 'mc_analyze(target="...", depth="standard/full")',
+        "keyword_lookup": 'mc_lookup(query="...", mode="code")',
+        "local_search": "先用 rg / 本地搜索缩小范围，再回到 Memory Center 做结构化分析",
+    }
+    return actions.get(recommended_path, actions["local_search"])
+
+
+def _build_lookup_hint_candidate_paths(
+    *,
+    recommended_path: str,
+    preferred_tools: list[str],
+    reasons: list[str],
+    sniff: dict[str, Any],
+) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = [
+        {
+            "candidate_type": "lookup_path",
+            "target": recommended_path or "local_search",
+            "status": "probable",
+            "weight": {
+                "call_chain": 0.92,
+                "cross_service_analysis": 0.9,
+                "symbol_lookup": 0.88,
+                "keyword_lookup": 0.8,
+                "local_search": 0.7,
+            }.get(recommended_path or "local_search", 0.72),
+            "why": reasons[0] if reasons else "这是当前 lookup 阶段最合适的入口。",
+            "next_action": _lookup_next_action(recommended_path or "local_search"),
+            "verification_cost": "low",
+            "preferred_tools": preferred_tools[:3],
+            "_learning_aliases": [
+                {"candidate_type": "lookup_path", "target": recommended_path or "local_search"},
+            ],
+        }
+    ]
+    if sniff.get("risk_level") in {"medium", "high"}:
+        candidates.append(
+            {
+                "candidate_type": "risk_validation",
+                "target": sniff.get("risk_level", ""),
+                "status": "possible",
+                "weight": 0.78 if sniff.get("risk_level") == "medium" else 0.88,
+                "why": f"当前 sniff 风险等级为 {sniff.get('risk_level', '')}，建议尽早转入结构化验证。",
+                "next_action": 'mc_analyze(target="...", depth="standard/full")',
+                "verification_cost": "medium",
+                "preferred_tools": ["mc_analyze"],
+            }
+        )
+    if sniff.get("candidate_files"):
+        candidates.append(
+            {
+                "candidate_type": "live_file_check",
+                "target": (sniff.get("candidate_files", [{}])[0] or {}).get("path", ""),
+                "status": "possible",
+                "weight": 0.64,
+                "why": "已有候选文件，可直接读取 live file 做低成本确认。",
+                "next_action": f'优先读取 `{(sniff.get("candidate_files", [{}])[0] or {}).get("path", "")}` 实时内容',
+                "verification_cost": "low",
+                "preferred_tools": ["memory_search_code_tool", "local_search"],
+            }
+        )
+    return candidates
+
+
+def workspace_check_contract(workspace_file: str | Path, contract_file: str, change_type: str) -> dict[str, Any]:
+    _, store = load_context(workspace_file)
+    files = store.read_json_prefer_backend("file-index.json", [])
+    feigns = store.read_json_prefer_backend("feign-index.json", [])
+    mq = store.read_json_prefer_backend("mq-index.json", [])
+    basename = Path(contract_file).stem.lower()
+    affected = []
+    for item in files:
+        text = item.get("path", "").lower()
+        if basename in text:
+            affected.append(item)
+    from ..contracting.static import CONTRACT_DIFF_FILE, CONTRACT_SNAPSHOT_FILE, contract_semantic_report
+    semantic = contract_semantic_report(
+        store.read_json_prefer_backend(CONTRACT_SNAPSHOT_FILE, {}),
+        store.read_json_prefer_backend(CONTRACT_DIFF_FILE, {}),
+        store.read_json_prefer_backend("service-topology.json", {}),
+        contract_file,
+    )
+    from ..contracting.runtime import runtime_contract_compatibility
+    runtime = runtime_contract_compatibility(workspace_file, contract_file)
+    return {
+        "contract_file": contract_file,
+        "change_type": change_type,
+        "affected_candidates": affected[:50],
+        "related_feigns": [x for x in feigns if basename in json.dumps(x, ensure_ascii=False).lower()][:20],
+        "related_mq": [x for x in mq if basename in json.dumps(x, ensure_ascii=False).lower()][:20],
+        "semantic_compatibility": semantic,
+        "runtime_compatibility": runtime,
+        "gate_status": runtime["status"] if runtime.get("sample_count", 0) else semantic["status"],
+        "rules": match_rules(store, intent=f"contract {change_type} {contract_file}", files=[contract_file], scopes=["contract", "dto", "feign", "message"]),
+        "required_checks": [
+            "全 workspace 搜索字段引用点",
+            "确认历史 MQ 消息反序列化兼容",
+            "确认 Feign 调用方请求/响应兼容",
+            "新增字段提供默认值，删除字段需要灰度和兼容周期",
+        ],
+    }
+
+
+def workspace_check_rules(workspace_file: str | Path, projects: list[str] | None, change_type: str, files: list[str] | None) -> dict[str, Any]:
+    _, store = load_context(workspace_file)
+    intent = f"{change_type} {' '.join(projects or [])} {' '.join(files or [])}"
+    rules = match_rules(store, intent=intent, files=files or [], scopes=[change_type])
+    return {"projects": projects or [], "change_type": change_type, "files": files or [], "rules": rules}
+
+
+def workspace_quality_overview(
+    workspace_file: str | Path,
+    *,
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Read-only quality + storage + generation health view for a workbench.
+
+    Aggregates the unified quality gate (A-E), scoped-refresh performance,
+    IR diff gate, and storage dry-run candidates into one bounded, sanitized
+    projection. Never executes reindex/GC/VACUUM; never exposes source/paths/
+    query text.
+    """
+    from memory_center.core.assessment.health import run_quality_health_gate
+    from memory_center.core.freshness.contract import assemble_index_context
+    from memory_center.core.retrieval.planner import scoped_refresh_performance_status
+
+    ws = str(workspace_file)
+    health = run_quality_health_gate(ws, replay_ok=None)
+    perf = scoped_refresh_performance_status(ws, limit=min(limit, 50))
+    ctx = assemble_index_context(ws)
+    store = WorkspaceStore(ws)
+
+    # Storage dry-run candidates (read-only).
+    try:
+        from memory_center.core.indexing.control_plane import index_control_status
+        from memory_center.core.indexing.shards import cleanup_generations
+
+        ctrl = index_control_status(store)
+        gc = cleanup_generations(
+            store,
+            active_generation=str(ctrl.get("active_generation", "") or ""),
+            previous_generation=str(ctrl.get("previous_generation", "") or ""),
+            keep=2,
+            apply=False,
+        )
+        storage = {
+            "gc_candidates": len(gc.get("candidates", []) or []),
+            "gc_candidate_bytes_mb": round(float(gc.get("candidate_bytes", 0) or 0) / 1e6, 1),
+        }
+    except Exception:
+        storage = {"gc_candidates": 0, "gc_candidate_bytes_mb": 0.0}
+
+    gen = store.index_dir / "generations"
+    from pathlib import Path as _P
+
+    generation_count = len([p for p in _P(gen).iterdir() if p.is_dir()]) if _P(gen).exists() else 0
+    storage["generation_count"] = generation_count
+    try:
+        projection = store.jsonl_export_health(limit=50)
+        storage["jsonl_projection"] = {
+            "status": projection["status"],
+            "needs_sync_count": projection["needs_sync_count"],
+            "dirty_count": projection["dirty_count"],
+        }
+    except Exception:
+        storage["jsonl_projection"] = {"status": "unknown", "needs_sync_count": 0, "dirty_count": 0}
+
+    return {
+        "schema_version": 1,
+        "status": health["status"],
+        "overview": {
+            "active_generation": health["generation"]["active"],
+            "previous_generation": health["generation"]["previous"],
+            "freshness": ctx.get("freshness"),
+            "coverage": {k: ctx.get("coverage", {}).get(k) for k in ("indexed_files", "requested_files")},
+            "release_gate_status": health["status"],
+            "next_actions": health["next_actions"][:3],
+        },
+        "retrieval": {
+            "replay_status": next((c["status"] for c in health["checks"] if c["id"] == "retrieval_replay"), "real_case_missing"),
+            "ir_gate": health.get("quality", {}).get("ir_gate", {}),
+            "anchor_recall": (health.get("quality", {}).get("ir_gate") or {}).get("anchor_recall"),
+        },
+        "refresh_performance": {
+            "p50_ms": perf.get("p50_ms"),
+            "p95_ms": perf.get("p95_ms"),
+            "budget_ms": perf.get("budget_ms"),
+            "status": perf.get("status"),
+        },
+        "storage": storage,
+        "attention_reasons": health["attention_reasons"][:8],
+        "blocking_reasons": health["blocking_reasons"][:8],
+    }

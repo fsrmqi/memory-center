@@ -1,0 +1,266 @@
+{
+  "_version": "1.0",
+  "_comment": "B-03 baseline snapshot of MCP tool schemas. Do not edit manually — regenerate with scripts/update_schemas_snapshot.py",
+  "tools": {
+    "mc_start": {
+      "required": [
+        "intent"
+      ],
+      "optional": [
+        "auto_sync_mode",
+        "budget",
+        "limit",
+        "sync_task_space"
+      ]
+    },
+    "mc_lookup": {
+      "required": [
+        "query"
+      ],
+      "optional": [
+        "chain_direction",
+        "depth",
+        "enable_vector",
+        "entry",
+        "intent",
+        "limit",
+        "mode",
+        "name",
+        "project",
+        "ref_id",
+        "ref_ids",
+        "scope",
+        "symbol",
+        "vector_weight"
+      ]
+    },
+    "mc_analyze": {
+      "required": [
+        "target"
+      ],
+      "optional": [
+        "change_type",
+        "contract_file",
+        "depth",
+        "direction",
+        "files",
+        "max_depth",
+        "projects",
+        "scope"
+      ]
+    },
+    "mc_sync": {
+      "required": [],
+      "optional": [
+        "auto_sync_mode",
+        "intent",
+        "limit",
+        "session_id",
+        "task_id",
+        "title"
+      ]
+    },
+    "mc_resume": {
+      "required": [],
+      "optional": [
+        "budget",
+        "intent",
+        "limit",
+        "session_id",
+        "task_id"
+      ]
+    },
+    "mc_handoff": {
+      "required": [
+        "target_model"
+      ],
+      "optional": [
+        "budget",
+        "intent",
+        "limit",
+        "session_id",
+        "task_id"
+      ]
+    },
+    "mc_close": {
+      "required": [
+        "session_id"
+      ],
+      "optional": [
+        "auto_sync_mode",
+        "outcome",
+        "record_case",
+        "task_id",
+        "title",
+        "verified_by"
+      ]
+    },
+    "mc_admin": {
+      "required": [
+        "action"
+      ],
+      "optional": [
+        "action_filter",
+        "budget",
+        "collection",
+        "content",
+        "create_if_missing",
+        "created_after",
+        "direction",
+        "entry",
+        "event_type",
+        "files",
+        "group",
+        "include_archived",
+        "intent",
+        "keep_recent",
+        "layer",
+        "limit",
+        "limit_candidates",
+        "max_depth",
+        "model",
+        "name",
+        "outcome",
+        "output_dir",
+        "owner",
+        "payload",
+        "payload_type",
+        "prefer_layer",
+        "priority",
+        "project",
+        "projects",
+        "reason",
+        "record_id",
+        "ref_path",
+        "scope",
+        "score_threshold",
+        "session_id",
+        "source",
+        "status",
+        "tags",
+        "target_model",
+        "task_id",
+        "text",
+        "title",
+        "tool_name",
+        "verified_by",
+        "view"
+      ]
+    },
+    "mc_context_pack": {
+      "required": [
+        "query"
+      ],
+      "optional": [
+        "budget_tokens",
+        "intent",
+        "limit"
+      ]
+    },
+    "mc_onboard": {
+      "required": [],
+      "optional": [
+        "persona",
+        "scope",
+        "target"
+      ]
+    },
+    "mc_domain": {
+      "required": [],
+      "optional": [
+        "include_flows",
+        "scope"
+      ]
+    },
+    "mc_freshness": {
+      "required": [],
+      "optional": [
+        "scope"
+      ]
+    }
+  },
+  "facade_schemas": {
+    "mc_start": {
+      "required_fields": [
+        "session",
+        "sniff",
+        "workflow"
+      ]
+    },
+    "mc_lookup": {
+      "required_fields": [
+        "result"
+      ]
+    },
+    "mc_analyze": {
+      "required_fields": [
+        "depth",
+        "impact",
+        "workflow"
+      ]
+    },
+    "mc_sync": {
+      "required_fields": [
+        "mode",
+        "result",
+        "workflow"
+      ]
+    },
+    "mc_resume": {
+      "required_fields": [
+        "next_actions",
+        "recent_evidence",
+        "resume_packet",
+        "unresolved_items",
+        "workflow"
+      ]
+    },
+    "mc_handoff": {
+      "required_fields": [
+        "handoff_packet",
+        "recent_evidence",
+        "tool_usage_report",
+        "workflow"
+      ]
+    },
+    "mc_close": {
+      "required_fields": [
+        "ended",
+        "suggested_case",
+        "sync_case",
+        "workflow"
+      ]
+    },
+    "mc_admin": {
+      "required_fields": []
+    },
+    "mc_context_pack": {
+      "required_fields": [
+        "checklist",
+        "entrypoints",
+        "intent",
+        "query",
+        "relationships",
+        "workflow"
+      ]
+    },
+    "mc_onboard": {
+      "required_fields": [
+        "tour",
+        "workflow"
+      ]
+    },
+    "mc_domain": {
+      "required_fields": [
+        "domain_count",
+        "domains",
+        "workflow"
+      ]
+    },
+    "mc_freshness": {
+      "required_fields": [
+        "workflow"
+      ]
+    }
+  }
+}
