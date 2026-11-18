@@ -1,11 +1,15 @@
 # User Guide / 使用指南
 
-> **适用版本 / Version**：5.0.0b30。5.0 以独立常驻服务为唯一入口：管理页、统一 MCP 与 CLI 共用同一应用层。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。下方较早的版本记录保留作决策演进背景，不代表当前入口。
+> **适用版本 / Version**：5.0.0b30。5.0 以独立常驻服务为唯一入口：管理页 `/admin/`、统一 MCP `/mcp` 与 `/api/v1/*` 管理 API 共用同一应用层（`memory-center` 命令只用于启动服务，没有子命令）。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。下方较早的版本记录保留作决策演进背景，不代表当前入口。
 >
-> **Version**: 5.0.0b30. The resident service is the single entry point of 5.0: admin UI, unified MCP and CLI share one application layer. See the [platform guide](V5_PLATFORM_GUIDE.md) for current contracts and the [CHANGELOG](CHANGELOG.md) for user-visible changes; older sections below are historical background only.
+> **Version**: 5.0.0b30. The resident service is the single entry point of 5.0: the `/admin/` UI, the unified `/mcp` endpoint and the `/api/v1/*` management API share one application layer (the `memory-center` command only launches the service and has no subcommands). See the [platform guide](V5_PLATFORM_GUIDE.md) for current contracts and the [CHANGELOG](CHANGELOG.md) for user-visible changes; older sections below are historical background only.
 
 
-> **当前入口 / Current entry**：`memory-center-service` 独立常驻服务，管理页 `/admin/`、MCP `/mcp`、项目目录 API `/api/v1/workspaces`。服务生命周期、状态与错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)；项目登记与管理见 [项目目录管理指南](V5_CATALOG_GUIDE.md)。下文 4.x CLI/HTTP 说明属于保留的引擎能力，不构成 5.0 兼容承诺。
+> **当前入口 / Current entry**：`memory-center-service` 独立常驻服务，管理页 `/admin/`、MCP `/mcp`、项目目录 API `/api/v1/workspaces`。服务生命周期、状态与错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)；项目登记与管理见 [项目目录管理指南](V5_CATALOG_GUIDE.md)；17 个 MCP 工具与 4.x→5.0 迁移对照见 [MCP 接入指南](MCP_GUIDE.md)。
+>
+> **章节边界 / Reading scope**：本文的**任务地图、§1 安装与 §6 的 MCP / 宿主绑定 / HTTP 三段是 5.0 现行入口**（§6 末尾另有一节明确标注为 4.x 历史能力）；§2、§3、§4、§5、§7、§8、§11、§12 中大量 `memory-center <subcommand>` 示例（`init`、`reindex`、`work-start`、`symbol`…），以及 `mc_admin(action=…)`、`mc_freshness`、`serve-http` 和 `/workspace/*` 读模型，都是 4.x 的 CLI / facade 命令。5.0 的 `memory-center` **只启动服务、没有任何子命令**；这些示例保留下来是为说明仍在 `core/` 中的引擎能力与历史决策背景，**不能照抄执行，也不构成 5.0 兼容承诺**。
+>
+> The resident service is the only 5.0 entry. **The Task Map, §1 Install and the MCP / host-bindings / HTTP parts of §6 describe current 5.0 surfaces** (the closing subsection of §6 is explicitly labelled 4.x historical). The many `memory-center <subcommand>` examples in §2/§3/§4/§5/§7/§8/§11/§12 (plus `mc_admin(action=…)`, `mc_freshness`, `serve-http` and `/workspace/*` read models) are 4.x CLI/facade commands. In 5.0 `memory-center` only launches the service and has **no subcommands** — those examples document engine capabilities still living under `core/` and are not executable.
 
 > **只读状态 / Read-only status**：MCP 的 `mc_service_status` 无参数、只读，返回服务就绪状态、版本、能力、存储与索引预算；也可用 `GET /health/live`、`GET /health/ready` 与状态 API。完整 tool 合同见 [MCP 接入指南](MCP_GUIDE.md)。
 >
@@ -17,17 +21,18 @@
 
 ## 任务地图 / Task Map
 
-不要从命令列表开始。按当前任务选择一条路径，完成停止条件后再升级：
+不要从命令列表开始。按当前任务选择一条路径，完成停止条件后再升级。下表全部是 **5.0 可用的入口**（工具名与参数见 [MCP 接入指南](MCP_GUIDE.md)）：
 
 | 任务 | 主入口 | 停止条件 | 升级路径 |
 |---|---|---|---|
-| 首次接入 | `init` -> `reindex` -> `inspect` | parser active、workspace 正确 | `setup-agent` 修复宿主绑定 |
-| 日常定位 | `work-start` -> `query` / `symbol` | 已有证据文件和明确下一步 | `mc_lookup(mode="walkthrough")` |
-| 变更影响 | `impact` 或 `mc_analyze` | 风险、规则、验证清单明确 | 高风险时 `depth="full"` |
-| 索引新鲜度 | `status` / `watcher-status` | 没有相关 dirty path | `watcher-start` 或局部 reindex |
-| 长任务恢复 | `work-resume-check` | 状态为 `ready` | `repair-task --apply` 后重试 |
-| 分析交接 | `export-evidence-subgraph` | 已得到有界证据图 | 补充人工确认或验证结论 |
-| 宿主排障 | `inspect` | 已得到可执行修复建议 | 重启宿主会话后复查 |
+| 首次接入 | `memory-center-service` 启动 → 管理页 `/admin/` 登记项目 → `mc_workspaces()` 取 `workspace_id` | 项目状态 `active`、`mc_service_status.ready=true` | 按 MCP 接入指南配置宿主端点 |
+| 建立索引 | `mc_index(workspace_id)` → `mc_job_status(job_id)` | job 到终态、generation 已发布 | 失败用 `POST /api/v1/jobs/{job_id}/retry` |
+| 日常定位 | `mc_lookup(workspace_id, query, mode=...)` | 拿到证据路径与明确下一步 | 换 `mode` 或用 `mc_analyze` |
+| 变更影响 | `mc_analyze(workspace_id, target)` | 影响链与风险明确 | 沿 `candidate_paths` 先验证高置信项 |
+| 会话生命周期 | `mc_start` → `mc_resume` / `mc_close` | 会话轨迹与结论完整 | `mc_ref(ref_id)` 回取证据 |
+| 宿主排障 | `mc_service_status` + `GET /health/ready` | 端点与认证确认 | 配好 Streamable HTTP 或 `memory-center-mcp` 代理后重启宿主会话 |
+
+`mc_lookup` 的 `mode` 取值为 `keyword` / `vector` / `hybrid` / `symbol` / `callers` / `callees` / `context`；4.x 的 `auto` / `walkthrough` / `code` / `trace` 已退役。
 
 ## 1. Install / 安装
 
@@ -55,11 +60,14 @@ pipx install --python python3.11 --force /path/to/memory-center
 pip install -e .
 ```
 
-验证：
+验证服务已就绪。5.0 **没有** `memory-center --version`：`memory-center` 只启动服务，不接受版本参数。
 
 ```bash
-memory-center --version
+memory-center-service          # 前台启动，默认 127.0.0.1:8765
+curl -s http://127.0.0.1:8765/health/ready
 ```
+
+版本、就绪状态、能力与索引预算由无参数的 MCP 工具 `mc_service_status` 返回（或 `GET /health/live`、`GET /health/ready`）。字段约定见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)。
 
 ## 2. Initialize Workspace / 初始化工作区
 
@@ -267,50 +275,57 @@ stdio 代理不接收 `--workspace`：它只是把 stdio 转发到常驻服务�
 
 The stdio proxy takes no `--workspace`: it forwards stdio to the resident service. The endpoint comes from `MEMORY_CENTER_URL` and credentials from `MEMORY_CENTER_TOKEN`, so one proxy process can serve any workspace.
 
-MCP 绑定由 `core/governance/instructions.py` 写入：`write_agent_instructions()` 落受管协议块，`repair_agent_mcp_bindings()` 补齐聚合根与每个 service 子目录的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`，装有 DSH 时还覆盖各 profile 的 `cordis.patch.yml`。5.0 没有对应的 CLI 子命令，触发方式是管理端 `mc_admin(action="runtime_audit", force=true)`：`force=true` 才写入，省略则只做诊断并返回 `missing_or_stale` 清单。
+工具面以服务实际返回的 `tools/list` 为准，当前 17 个：`mc_service_status`、`mc_workspaces`、`mc_lookup`、`mc_analyze`、`mc_start`、`mc_resume`、`mc_close`、`mc_ref`、`mc_memory_write`、`mc_wiki_write`、`mc_index`、`mc_job_status`、`mc_job_cancel`、`assistant_admin`、`assistant_knowledge`、`assistant_memory`、`assistant_skill`。逐项签名见 [MCP 接入指南](MCP_GUIDE.md)。
 
-MCP bindings are written by `core/governance/instructions.py`: `write_agent_instructions()` drops the managed protocol block, and `repair_agent_mcp_bindings()` fills in `.codex/mcp.json`, `.cursor/mcp.json` and `.mcp.json` for the aggregate root and every service root (plus each DSH profile's `cordis.patch.yml` when DSH is installed). 5.0 exposes no CLI subcommand for this; call `mc_admin(action="runtime_audit", force=true)` — omit `force` to get a diagnostics-only report with a `missing_or_stale` list.
+常见的 4.x 名字在 5.0 已退役，不要照抄：`mc_admin(action=…)`、`mc_context_pack`、`mc_freshness`、`mc_onboard`、`mc_domain`、`mc_sync`、`mc_handoff`。特别注意 `assistant_admin` 只支持 `validate` / `scan` / `index` 三个知识库动作，**不是** `mc_admin` 的替代品；4.x 管理路由的现做法见 MCP 接入指南的迁移对照表。
 
-服务子目录里看不到 `mc_*` 工具时，先跑一次 `mc_admin(action="runtime_audit", force=true)` 补齐绑定，再重启宿主会话。注意 4.x 的 `setup-agent`、`runtime-audit --fix`、`generate-hooks` 在 5.0 均已移除，`hooks.yaml` 只被审计读取、不执行任何 hook。
+The 5.0 tool surface is defined by the live `tools/list` response (17 tools today; see the [MCP guide](MCP_GUIDE.md)). 4.x names such as `mc_admin(action=…)`, `mc_freshness` and `mc_context_pack` are retired. `assistant_admin` only supports `validate` / `scan` / `index` and is **not** a replacement for `mc_admin`.
 
-If a service sub-directory does not expose `mc_*` tools, run `mc_admin(action="runtime_audit", force=true)` to repair bindings, then restart the host session. The 4.x `setup-agent`, `runtime-audit --fix` and `generate-hooks` commands are gone in 5.0; `hooks.yaml` is read by the audit and never executed.
+### 宿主绑定 / Host bindings
 
-如果 Agent 首轮没有看到 `mc_*`，先把状态视为“装载中或未知”：执行延迟工具发现，并用 `mc_freshness` 做轻量验证。Codex 中可运行 `codex mcp get memory-center`；若显示 `enabled: true`，但当前会话仍无工具，应刷新或新建会话，不要误报“Memory Center 未加载”。只有绑定缺失、命令不存在或 MCP 调用明确失败时才执行降级流程。
+MCP 绑定由 `core/governance/instructions.py` 写入：`write_agent_instructions()` 落受管协议块，`repair_agent_mcp_bindings()` 补齐聚合根与各 service 子目录的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`，装有 DSH 时还覆盖各 profile 的 `cordis.patch.yml`。5.0 既没有 CLI 子命令，也没有 MCP 工具暴露该动作——它们是内部函数，只由宿主集成脚本或测试调用。用户侧按上文把 `/mcp` 端点配置到宿主即可；`memory-center-integrations` 只打印配置模板，不会修复绑定。
 
-当问题不只是“查什么”，还涉及需求澄清、断言核查、验证设计或方案选择时，可以使用以下 MCP Prompt：
+MCP bindings are written by `core/governance/instructions.py` (`write_agent_instructions()` / `repair_agent_mcp_bindings()`). 5.0 exposes neither a CLI subcommand nor an MCP tool for that action — they are internal functions called by host integration scripts or tests. Configure the `/mcp` endpoint in your host; `memory-center-integrations` only prints a template and does not repair bindings.
 
-- `clarify_change_request`：需求还不够可执行时逐问澄清。
-- `audit_project_claim`：核查工程说法并区分事实、推断和判断。
-- `design_minimal_validation`：为改动设计低成本、可逆、可证伪的验证。
-- `compare_change_options`：用统一维度比较两个架构或迁移方案。
+服务子目录里看不到 `mc_*` 工具时，先确认宿主指向 `/mcp` 端点且凭据正确，再重启宿主会话。4.x 的 `setup-agent`、`runtime-audit --fix`、`generate-hooks` 在 5.0 均已移除；`hooks.yaml` 只被审计读取、不执行任何 hook。
 
-这些 Prompt 会引导 Agent 调用现有 `mc_*` facade，但自身不创建任务、不执行命令、不写验证回执。需要持久化或执行时，仍使用现有 task、acceptance、预注册验证 profile 和 decision 入口。
+If a service sub-directory does not expose `mc_*` tools, verify the host points at `/mcp` with the right credentials, then restart the host session. The 4.x `setup-agent`, `runtime-audit --fix` and `generate-hooks` commands are gone; `hooks.yaml` is read by the audit and never executed.
 
-These prompts guide the Agent through existing `mc_*` facades. They do not create tasks, execute commands, or write validation receipts by themselves; persistence and execution continue through the existing task, acceptance, approved-profile, and decision surfaces.
+如果 Agent 首轮没有看到 `mc_*`，先把状态视为“装载中或未知”：执行延迟工具发现，并用无参数的 `mc_service_status` 或 `GET /health/ready` 做轻量验证。Codex 中可运行 `codex mcp get memory-center`；若显示 `enabled: true`，但当前会话仍无工具，应刷新或新建会话，不要误报“Memory Center 未加载”。只有绑定缺失、命令不存在或 MCP 调用明确失败时才执行降级流程。
 
-先运行 `memory-center eval-reasoning-prompts` 可确认四个 Prompt 的静态合同仍完整，但此结果只代表 smoke。真实验收请复制 [examples/reasoning-prompt-eval](../examples/reasoning-prompt-eval/README.md) 模板，在本地填写脱敏 real cases 和人工 observations，再用 `--cases`、`--observations` 生成统一报告。若只有示例或缺少任一类真实观测，报告会保持 `release_ready=false`。
+### 4.x 引擎能力（历史背景，非 5.0 入口）
 
-### HTTP JSON API + DSH Workbench
+`clarify_change_request`、`audit_project_claim`、`design_minimal_validation`、`compare_change_options` 四个模板仍作为静态资源留在 `core/governance/reasoning_prompts.py`，但 5.0 **没有注册任何 MCP Prompt**，也没有 `memory-center eval-reasoning-prompts` 命令。它们由 benchmark 评估脚本消费，属于引擎能力而非 5.0 入口，不能通过 MCP 调用。真实验收的 `examples/reasoning-prompt-eval` 模板同样属于 4.x 流程。
+
+The four reasoning-prompt templates still exist as static resources under `core/governance/reasoning_prompts.py`, but 5.0 registers **no MCP prompts** and has no `eval-reasoning-prompts` command. They are consumed by benchmark tooling only — engine capabilities, not 5.0 entry points.
+
+`evidence-subgraph` 同理：`core/presentation/evidence_subgraph.py` 提供有界证据图导出（从 node id 或受限 symbol 定位根节点，最多 3 跳、120 条边、80 个节点，输出 JSON / Markdown / HTML），实现仍在且被回归测试覆盖，但 5.0 没有对应的 MCP 工具或 `/api/v1` 路由。4.x 的 `memory-center export-evidence-subgraph` 与 `GET /workspace/evidence-subgraph` 已退役；契约细节见 [ARCHITECTURE.md](ARCHITECTURE.md) §11。
+
+Likewise, `core/presentation/evidence_subgraph.py` still implements bounded evidence-graph export, but 5.0 exposes no MCP tool or `/api/v1` route for it. The 4.x `export-evidence-subgraph` CLI entry and `/workspace/evidence-subgraph` route are retired; see [ARCHITECTURE.md](ARCHITECTURE.md) §11.
+
+### HTTP JSON API + 管理页 / Admin UI
+
+5.0 **不需要** `serve-http`：启动 `memory-center-service` 即为 HTTP 服务，默认监听 `127.0.0.1:8765`，管理页为 `http://127.0.0.1:8765/admin/`。
 
 ```bash
-memory-center serve-http --workspace /abs/path/.memory-center/workspace.yaml --host 127.0.0.1 --port 8765
+memory-center-service
+curl -s http://127.0.0.1:8765/health/live
+curl -s http://127.0.0.1:8765/health/ready
 ```
 
-HTTP `GET` 仅用于无副作用读取；写入、会话记录和受控外部动作必须使用 `POST`。默认只能绑定 loopback；如需非回环地址，设置 `MEMORY_CENTER_HTTP_TOKEN`，并在请求中携带 `Authorization: Bearer <token>`。
+常用接口（完整合同见 [项目目录管理指南](V5_CATALOG_GUIDE.md) 与 [5.0 平台指南](V5_PLATFORM_GUIDE.md)）：
 
-内置 `/ui/*` 页面和 `/app` Vue SPA 已下线，访问会返回 `404`。请使用 Memory Center DSH Plugin 查看交互式工作台；自建集成则调用 `/workspace/*` JSON 读模型。常用读模型包括：
+- 项目目录：`GET/POST /api/v1/workspaces`、`POST /api/v1/workspaces/preview`、`GET /api/v1/workspaces/{workspace_id}`、`PATCH` / `pause` / `resume`
+- 后台作业：`GET /api/v1/jobs`、`POST /api/v1/jobs/{job_id}/retry`、`POST /api/v1/jobs/{job_id}/cancel`
+- 健康检查：`GET /health/live`、`GET /health/ready`
 
-- `/workspace/workbench-summary`
-- `/workspace/work-resume`
-- `/workspace/impact`
-- `/workspace/receipts`
-- `/workspace/usage-report`
-- `/workspace/memory-backend`
-- `/workspace/freshness`
-- `/workspace/job-status`
-- `/workspace/quality-overview`
+项目登记、暂停、更新等管理接口要求 `Authorization: Bearer <管理员令牌>`；令牌文件在 `<服务目录>/admin-token`（默认 `~/.memory-center/v5/admin-token`），权限 0600，首次启动自动生成。服务默认只监听 loopback；需要非回环地址时用 `--container-local` 与 `--allowed-host`，并遵循服务运行指南的发布约束。
 
-旧页面、替代读模型和请求示例见 [HTTP 展示迁移说明](HTTP_DISPLAY_MIGRATION.md)。
+Project-management endpoints require `Authorization: Bearer <admin token>`; the token file is `<data-dir>/admin-token` (0600, generated on first start). The service listens on loopback by default; see the service guide before exposing a non-loopback address.
+
+4.x 的 `memory-center serve-http`、`MEMORY_CENTER_HTTP_TOKEN`、`/workspace/*` JSON 读模型、`/ui/*` 页面与 `/app` Vue SPA 在 5.0 均已退役。旧页面与替代读模型仅作历史背景，见 [HTTP 展示迁移说明](HTTP_DISPLAY_MIGRATION.md)。
+
+The 4.x `serve-http` command, `MEMORY_CENTER_HTTP_TOKEN`, `/workspace/*` read models, `/ui/*` pages and `/app` SPA are all retired in 5.0. The old display migration note is kept as historical background only.
 
 ## 7. Multi-Workspace / 多工作区
 

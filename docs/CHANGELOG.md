@@ -4,29 +4,31 @@
 
 ### 修复 / Fixed
 
-- **运行时诊断不再推荐已移除的命令**：`_recommended_actions()` 原先建议 `setup-agent`、`generate-hooks --host codex`、`runtime-audit --fix`、`reindex --workspace`，而这些子命令在 5.0 已全部移除（`memory-center` 现在只启动服务，无任何子命令）。改为给出 5.0 可执行的替代：`mc_admin(action="runtime_audit", force=true)` 补齐 MCP 绑定、管理页重试失败作业。
+- **更正上一轮引入的错误入口**：`mc_admin(action=…)` 是 4.x 管理路由，5.0 已退役（`docs/MCP_GUIDE.md` §8 迁移对照明确写「管理页/管理 API」）；5.0 的 `assistant_admin` 只支持 `validate` / `scan` / `index`，并非其替代品。上一轮把 `mc_admin(action="runtime_audit", force=true)` 写成 5.0 的绑定修复入口，属双重错误（工具名不存在 + action 未暴露）。核实结论：5.0 **没有任何 MCP 工具或 HTTP 路由暴露 `repair_agent_mcp_bindings()`**，该函数只由 `core/audit/runtime.py` 内部与宿主集成脚本调用。已在 README、USER_GUIDE、`core/audit/runtime.py`、`core/audit/inspect.py` 全部更正为「配置 `/mcp` 端点 + 无一键修复入口」。
+- **运行时诊断不再推荐已移除的命令**：`_recommended_actions()` 原先建议 `setup-agent`、`generate-hooks --host codex`、`runtime-audit --fix`、`reindex --workspace`，而这些子命令在 5.0 已全部移除（`memory-center` 现在只启动服务，无任何子命令）。改为给出 5.0 真实的只读/重试路径：`mc_service_status` 或 `GET /health/ready` 看服务状态、`mc_job_status(job_id)` 看索引作业、`POST /api/v1/jobs/{job_id}/retry` 重试失败作业；宿主接入按 `docs/MCP_GUIDE.md` §1 配置 `/mcp` 端点。
 - **`codex_missing_scripts` 不再触发待修建议**：5.0 不存在生成 `.codex-hooks/*.sh` 的链路，该字段永远无法满足，若参与判断会让每个带 `hooks.yaml` 的 workspace 长期显示一条无解建议。触发条件收窄为 `config_valid=False`（真正的格式错误），字段本身仍如实报告。
-- `core/audit/runtime.py` 的 `agent_mcp_repair` 候选建议由 `runtime-audit --fix` 改为 `mc_admin(action="runtime_audit", force=true)`。
-- **能力矩阵不再冒充 5.0 入口注册表**：`core/foundation/capabilities.py` 原声明 14 条 `_cli(...)`（`change-review`、`runtime-audit`、`workflow-profile` 等），但 `memory-center` 在 5.0 只启动服务、没有任何子命令。已删除全部 `cli` 声明与 `_cli()` 构造器；`all_cli_commands()` 保留为兼容 shim，明确恒返回空列表。模块 docstring 现逐类标注 5.0 有效性：`mcp_admin_action` 为 live（14 条均能在 `build_admin_registry()` 解析），`http` 的 `/workspace/*` 与 `mcp_tool` 的 4 个 facade 名为 legacy，`cli` 为 retired。
-- 新增 `LIVE_ENTRY_KINDS` / `LEGACY_ENTRY_KINDS` / `DECLARED_ENTRY_KINDS`，把"这份矩阵部分属于历史"从注释变成可供测试与消费方读取的常量。
+- `core/audit/runtime.py` 的 `agent_mcp_repair` 候选建议改为「配置 `/mcp` 端点」，并说明 5.0 无面向用户的绑定修复入口。
+- **更正上一提交对 `mcp_admin_action` 的 live 归类**：`build_admin_registry()` 在 5.0 **没有任何生产调用方**，全仓只有测试在调（4.x 的 `mc_admin` 工具已退役）。所以「action 能在 registry 里解析」只证明引擎契约仍成立，不能证明它是 5.0 入口。核实后矩阵 49 条入口声明**没有一条是 5.0 活入口**：`LIVE_ENTRY_KINDS` 改为空集，`http` / `mcp_tool` / `mcp_admin_action` 三类全部归为 legacy，另设 `ENGINE_BACKED_ENTRY_KINDS` 表示「引擎侧可解析、被回归测试覆盖，但用户不可达」。测试相应拆成「引擎契约仍成立」与「不得声称任何 kind 是 5.0 live 入口」两条断言。
+- **能力矩阵不再冒充 5.0 入口注册表**：`core/foundation/capabilities.py` 原声明 14 条 `_cli(...)`（`change-review`、`runtime-audit`、`workflow-profile` 等），但 `memory-center` 在 5.0 只启动服务、没有任何子命令。已删除全部 `cli` 声明与 `_cli()` 构造器；`all_cli_commands()` 保留为兼容 shim，明确恒返回空列表。模块 docstring 逐类标注 retired / legacy，并指向真实的 5.0 面（`service/platform_mcp.register_tools`、`/api/v1/*` 路由、`/admin/` 管理页）。
+- 新增 `LIVE_ENTRY_KINDS` / `LEGACY_ENTRY_KINDS` / `ENGINE_BACKED_ENTRY_KINDS` / `DECLARED_ENTRY_KINDS`，把「这份矩阵整体属于历史」从注释变成可供测试与消费方读取的常量。
 
 ### 文档 / Docs
 
 - README「宿主接入」段重写：删除 `memory_center/hooks/` 与 `run-hook` / `generate-hooks` 的用法描述，说明 hook 执行器已在 5.0 移除、`hooks.yaml` 降级为审计读取的声明式配置；补上真实的绑定写入入口与 stdio 代理的环境变量约定。
 - `docs/ARCHITECTURE.md`：workspace 树中 `hooks.yaml` 注释更正为"4.x hook 配置，5.0 仅审计读取"；第 11 节由"Hook 层在 `memory_center/hooks/`"改写为移除后的 MCP 绑定事实，并写明 `pre_edit` 实时阻断在 5.0 没有等价能力；附录 G 增加阅读提示，说明 G.3/G.4/G.6 仅解释 `hooks.yaml` 字段保留原因。
-- `docs/USER_GUIDE.md`：`memory-center-mcp --workspace ...` 更正为环境变量用法（该代理不接收任何命令行参数），并把 `setup-agent` / `runtime-audit --fix` 的说明替换为 `mc_admin(action="runtime_audit", force=true)`。
+- `docs/USER_GUIDE.md`：开头建立**章节级边界**（任务地图与 §6 为 5.0 现行，§2/§3/§4/§5/§7/§8/§11/§12 的 CLI 示例为 4.x 历史、不可执行）；任务地图整表改为 5.0 入口（管理页登记 → `mc_index` → `mc_lookup` / `mc_analyze` → `mc_job_status` / retry）；§1 删除不存在的 `memory-center --version`，改为 `memory-center-service` + `/health/ready` + `mc_service_status`；§6 重写为现行合同——列出 17 个工具与已退役的 4.x 工具名、说明 `assistant_admin` 不是 `mc_admin` 的替代品、MCP Prompt 在 5.0 未注册、HTTP 段由 `serve-http` / `/workspace/*` 改为 `/api/v1/*` + `/admin/` + 管理员令牌。同时把 `memory-center-mcp --workspace ...` 更正为环境变量用法，`mc_freshness` 改为 `mc_service_status`。
 - `docs/REFERENCE.md`：6.2 补全 `Rule` 必填/可选字段与 `enforcement`/`check`/`repair_steps`；更正 `severity` 的表述（自由字符串、无枚举校验，内置规则用 `must`）；6.3 说明 `hooks.yaml` 在 5.0 不再执行。
 
 ### 测试 / Tests
 
 - `tests/entrypoints/test_runtime_inspect.py`：原 `test_runtime_inspect_reports_missing_hook_scripts` 断言必须出现 `generate-hooks --host codex` 建议，改为断言不再出现已移除命令，并新增非法 `hooks.yaml` 仍给出可执行建议的用例。
-- `tests/entrypoints/test_capability_matrix.py`：原 `test_all_cli_commands_returns_non_empty` 只断言"非空"，因此 14 条假 CLI 声明从未被发现；改为断言 `all_cli_commands() == []`。原 `test_mcp_admin_actions_in_dispatch` 用 `inspect.getsource` 做字符串包含（注释里出现同名字符串即可通过），改为用真实 `build_admin_registry().has()` 校验。
-- 新增 `TestEntryPointTruthfulness` 4 项：不得残留 `cli` 声明、所有声明的 kind 必须属于 `DECLARED_ENTRY_KINDS`、legacy 的 4 个 MCP 工具名确实不在 `service/platform_mcp.py`、legacy 的 17 条 `/workspace/*` 路径确实不在三个 5.0 路由模块中。违规信息内嵌 Step 1 / Step 2。注入假 `cli` 声明后由两条断言同时拦下，撤除后恢复全绿。
+- `tests/entrypoints/test_capability_matrix.py`：原 `test_all_cli_commands_returns_non_empty` 只断言"非空"，因此 14 条假 CLI 声明从未被发现；改为断言 `all_cli_commands() == []`。原 `test_mcp_admin_actions_in_dispatch` 用 `inspect.getsource` 做字符串包含（注释里出现同名字符串即可通过），改为用真实 `build_admin_registry().has()` 校验，并明确这是引擎契约、不是 5.0 入口。
+- 新增 `TestEntryPointTruthfulness` 5 项：不得残留 `cli` 声明、**不得把任何 kind 声称是 5.0 live 入口**、所有声明的 kind 必须属于 `DECLARED_ENTRY_KINDS`、legacy 的 4 个 MCP 工具名确实不在 `service/platform_mcp.py`、legacy 的 17 条 `/workspace/*` 路径确实不在三个 5.0 路由模块中。违规信息内嵌 Step 1 / Step 2。注入假 `cli` 声明后由两条断言同时拦下，撤除后恢复全绿。
 
 ### 已知边界 / Known limits
 
-- `docs/USER_GUIDE.md` 仍有约 60 处 `memory-center <subcommand>` 形式的命令示例（`init`、`reindex`、`query`、`work-start` 等），均为 4.x CLI；5.0 已无 CLI 分发器，这些示例需整体改写为 HTTP / MCP 路线，属独立一轮返工。
-- 能力矩阵中的 17 条 `http` 与 4 条 `mcp_tool` 声明仍是 4.x 路径/工具名，本轮只做显式 legacy 标注与断言，**未删除**：`context-pack`、`freshness`、`onboard`、`domain` 这 4 个能力若删掉这些条目就会失去全部 entry，需要逐一确认它们在 5.0 的真实入口（或确认能力已合并退役）才能改，属独立一轮。
+- `docs/USER_GUIDE.md` 的 §2/§3/§4/§5/§7/§8/§11/§12 仍保留约 60 处 4.x `memory-center <subcommand>` 命令示例（`init`、`reindex`、`work-start`、`symbol`…）。它们对应仍在 `core/` 中、且被回归测试覆盖的引擎能力，本轮**不逐条改写**，而是用开头的章节级边界明确标注为历史说明。若要把它们逐一映射到 5.0 入口，需要先确认每个能力在 5.0 的归属，属独立一轮。
+- 能力矩阵中的 17 条 `http`、4 条 `mcp_tool` 与 14 条 `mcp_admin_action` 声明全部属于 4.x / 引擎内部能力，本轮只做显式 legacy 标注与断言，**未删除**：`context-pack`、`freshness`、`onboard`、`domain` 若删掉条目就会失去全部 entry，且 `core_fields` / `error_semantics` 仍被回归测试消费。要收敛成 5.0 入口注册表需逐项确认归属，属独立一轮。
 
 ## 5.0.0b30 — 规则可执行判据与分层门禁 / Executable rule checks and layering gate
 

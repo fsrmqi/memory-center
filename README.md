@@ -866,8 +866,8 @@ Since 5.0 the MCP endpoint is the always-on service itself at `http://127.0.0.1:
 { "mcpServers": { "memory-center": { "type": "http", "url": "http://127.0.0.1:8765/mcp" } } }
 ```
 
-只支持 stdio 的宿主仍可用无状态代理 `memory-center-mcp`（转发到 `MEMORY_CENTER_URL`，不接受旧 `--workspace`）。这套 5.0 绑定由 `mc_admin(action="runtime_audit", force=true)` 写入；4.x 的 `runtime-audit --fix` 与 `setup-agent` 已移除。
-Stdio-only hosts can still use the stateless `memory-center-mcp` adapter, which forwards to `MEMORY_CENTER_URL` and no longer accepts the legacy `--workspace` flag. These 5.0 bindings are written by `mc_admin(action="runtime_audit", force=true)`; the 4.x `runtime-audit --fix` and `setup-agent` commands are gone.
+只支持 stdio 的宿主仍可用无状态代理 `memory-center-mcp`（转发到 `MEMORY_CENTER_URL`，不接受旧 `--workspace`）。5.0 未暴露面向用户的绑定修复入口：`repair_agent_mcp_bindings()` 由宿主集成脚本调用，`memory-center-integrations` 只负责打印配置模板；4.x 的 `runtime-audit --fix` 与 `setup-agent` 已移除。
+Stdio-only hosts can still use the stateless `memory-center-mcp` adapter, which forwards to `MEMORY_CENTER_URL` and no longer accepts the legacy `--workspace` flag. 5.0 exposes no user-facing binding repair entry: `repair_agent_mcp_bindings()` is called by host integration scripts, while `memory-center-integrations` only prints a config template. The 4.x `runtime-audit --fix` and `setup-agent` commands are gone.
 
 当前暴露 17 个工具，签名以服务实际返回的 `tools/list` 为准：`mc_service_status`、`mc_workspaces`、`mc_lookup`、`mc_analyze`、`mc_start`、`mc_resume`、`mc_close`、`mc_ref`、`mc_memory_write`、`mc_wiki_write`、`mc_index`、`mc_job_status`、`mc_job_cancel`、`assistant_admin`、`assistant_knowledge`、`assistant_memory`、`assistant_skill`。逐项说明见 [MCP 接入指南](docs/MCP_GUIDE.md)。
 
@@ -1137,9 +1137,9 @@ The equivalent MCP admin actions are `mc_admin(action="walkthrough_health")`, `m
 
 5.0 removed the hook runner (former `memory_center/hooks/`) along with the `run-hook`, `generate-hooks`, `setup-agent` and `runtime-audit` subcommands. `.memory-center/hooks.yaml` is now only a declarative config read by the runtime audit and never triggers a call. Host integration is MCP-binding based: each managed project root gets `.codex/mcp.json`, `.cursor/mcp.json` and `.mcp.json`, all pointing at the Streamable HTTP endpoint `http://127.0.0.1:8765/mcp`; the stdio proxy is `memory-center-mcp`, without the old `--workspace` argument.
 
-受管协议块与上述绑定由 `core/governance/instructions.py` 写入：`write_agent_instructions()` 落协议块，`repair_agent_mcp_bindings()` 补齐各宿主配置并镜像到已配置 service 子目录根（如 `service-a/AGENTS.md`、`service-a/.codex/mcp.json`）。5.0 没有对应的 CLI 子命令，触发入口是 `mc_admin(action="runtime_audit", force=true)`。
+受管协议块与上述绑定由 `core/governance/instructions.py` 写入：`write_agent_instructions()` 落协议块，`repair_agent_mcp_bindings()` 补齐各宿主配置并镜像到已配置 service 子目录根（如 `service-a/AGENTS.md`、`service-a/.codex/mcp.json`）。5.0 既没有对应的 CLI 子命令，也没有 MCP 工具暴露该动作——它们是内部函数，只由宿主集成脚本或测试调用；用户侧按上文配置 MCP 端点即可。
 
-The managed protocol block and bindings are written by `core/governance/instructions.py`: `write_agent_instructions()` drops the protocol block and `repair_agent_mcp_bindings()` fills in each host config, mirrored into every configured service root (for example `service-a/AGENTS.md` and `service-a/.codex/mcp.json`). 5.0 exposes no CLI subcommand for this; the entry point is `mc_admin(action="runtime_audit", force=true)`.
+The managed protocol block and bindings are written by `core/governance/instructions.py`: `write_agent_instructions()` drops the protocol block and `repair_agent_mcp_bindings()` fills in each host config, mirrored into every configured service root (for example `service-a/AGENTS.md` and `service-a/.codex/mcp.json`). 5.0 exposes neither a CLI subcommand nor an MCP tool for this action — these are internal functions called by host integration scripts or tests. Users simply configure the MCP endpoint as described above.
 
 需要 4.x 的 `pre_edit` 实时阻断语义时注意：5.0 没有等价能力。门禁请走 CI（`scripts/check_rules.py`，见上文「规则的可执行判据」）或架构契约测试。
 
@@ -1153,9 +1153,9 @@ memory-center-integrations --target codex --target claude
 
 Install the host Wiki Skill and print the MCP config template (the only remaining host-integration command in 5.0; it does not repair bindings).
 
-诊断与绑定修复不再走 CLI：调用 `mc_admin(action="runtime_audit")` 只读诊断并返回 `missing_or_stale` 清单，`mc_admin(action="runtime_audit", force=true)` 才真正写入绑定。索引异常按报告里的建议处理——在管理页重试失败作业，或重新保存项目设置触发重建。
+运行时诊断走只读事实：服务状态用 `mc_service_status` 或 `GET /health/ready`，索引作业用 `mc_job_status(job_id)`，失败重试用 `POST /api/v1/jobs/{job_id}/retry`。宿主接入按上文配置 MCP 端点即可，没有一键修复命令。注意 `mc_admin(action=…)` 是 4.x 管理路由，5.0 已退役（见 [MCP 接入指南](docs/MCP_GUIDE.md) 的 4.x→5.0 迁移对照）；5.0 的 `assistant_admin` 只支持 `validate` / `scan` / `index`，不是它的替代品。
 
-Diagnostics and binding repair no longer go through the CLI: `mc_admin(action="runtime_audit")` produces a read-only report with a `missing_or_stale` list, and `mc_admin(action="runtime_audit", force=true)` actually writes the bindings. For index failures, follow what the report suggests — retry the failed job from the admin page, or re-save the project settings to trigger a rebuild.
+Runtime diagnostics read only facts: `mc_service_status` or `GET /health/ready` for service state, `mc_job_status(job_id)` for indexing jobs, and `POST /api/v1/jobs/{job_id}/retry` to retry a failed one. Host integration is configured as above; there is no one-shot repair command. `mc_admin(action=…)` was a 4.x admin route and is retired in 5.0 (see the 4.x→5.0 migration table in the [MCP guide](docs/MCP_GUIDE.md)); 5.0's `assistant_admin` only supports `validate` / `scan` / `index` and is not a replacement.
 
 详见 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
 

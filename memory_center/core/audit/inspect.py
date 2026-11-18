@@ -238,8 +238,8 @@ def _recommended_actions(
         actions.append("确认 memory-center-mcp 已安装且在宿主 PATH 中。")
     if not instructions["agents_md_present"]:
         actions.append(
-            "项目根缺少 AGENTS.md：按 docs/MCP_GUIDE.md §1 的接入示例放置受管协议块；"
-            "5.0 没有自动写入它的 CLI 子命令。"
+            "项目根缺少 AGENTS.md：按 docs/MCP_GUIDE.md §1 配置宿主 MCP 端点即可；"
+            "5.0 不自动写入该文件，受管协议块由宿主集成脚本调用 write_agent_instructions() 落盘。"
         )
     if not hooks["config_valid"]:
         actions.append(

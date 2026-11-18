@@ -15,6 +15,7 @@ from memory_center.core.foundation.capabilities import (
     CAPABILITIES,
     CAPABILITY_MAP,
     DECLARED_ENTRY_KINDS,
+    ENGINE_BACKED_ENTRY_KINDS,
     LEGACY_ENTRY_KINDS,
     LIVE_ENTRY_KINDS,
     all_cli_commands,
@@ -103,11 +104,12 @@ class TestMCPCoverage:
         pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mcp_admin_actions_in_dispatch(self):
-        """Every live entry must resolve against the real admin registry.
+        """Engine-backed admin actions must still resolve in the legacy registry.
 
-        The old check only looked for the action name anywhere in the source
-        text, so a mention in a comment was enough to pass. Resolve against
-        ``CommandRegistry.names()`` instead.
+        ``build_admin_registry()`` has no production caller in 5.0, so this is
+        an engine-contract check, **not** proof of a live entry point. The old
+        check only looked for the name anywhere in the source text; resolve
+        against ``CommandRegistry.names()`` instead.
         """
         from memory_center.application.admin import build_admin_registry
 
@@ -115,9 +117,9 @@ class TestMCPCoverage:
         registered = set(registry.names())
         for cap in CAPABILITIES:
             for entry in cap.entries:
-                if entry.kind in LIVE_ENTRY_KINDS:
+                if entry.kind in ENGINE_BACKED_ENTRY_KINDS:
                     assert registry.has(entry.identifier), (
-                        f"live entry '{entry.identifier}' for capability "
+                        f"engine-backed action '{entry.identifier}' for capability "
                         f"'{cap.name}' is not registered by build_admin_registry()"
                     )
         assert set(all_mcp_admin_actions()) <= registered
@@ -180,8 +182,23 @@ class TestEntryPointTruthfulness:
             assert not bad, (
                 f"{cap.name} still declares CLI entry point(s) {bad}.\n"
                 "Step 1: memory-center has no subcommands in 5.0; remove the cli entry.\n"
-                "Step 2: point the capability at a live mc_admin action instead."
+                "Step 2: describe the capability against a real 5.0 surface "
+                "(see docs/MCP_GUIDE.md) instead."
             )
+
+    def test_no_entry_kind_is_claimed_live_in_5_0(self):
+        """The matrix is a historical contract, not an entry-point registry.
+
+        ``build_admin_registry()`` has no 5.0 production caller; the live
+        surfaces are ``service/platform_mcp.register_tools``, the
+        ``/api/v1/*`` routers and the ``/admin/`` UI.
+        """
+        assert LIVE_ENTRY_KINDS == frozenset(), (
+            "Step 1: a kind was marked live — verify it is exposed by the "
+            "5.0 service, not merely reachable from a test.\n"
+            "Step 2: if genuinely live, add an assertion against that surface."
+        )
+        assert ENGINE_BACKED_ENTRY_KINDS <= LEGACY_ENTRY_KINDS
 
     def test_every_declared_kind_is_classified(self):
         kinds = {e.kind for cap in CAPABILITIES for e in cap.entries}

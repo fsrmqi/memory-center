@@ -247,7 +247,7 @@ def _build_runtime_audit_candidate_paths(
                 "status": "confirmed",
                 "weight": 0.92,
                 "why": "当前 agent 实际读取的 MCP 配置缺失或未指向本 workspace，子项目里会看不到 mc_* 工具。",
-                "next_action": "调用 mc_admin(action=\"runtime_audit\", force=true) 补齐根目录与子项目的 MCP 绑定",
+                "next_action": "按 docs/MCP_GUIDE.md §1 在宿主侧配置 /mcp 端点；5.0 无面向用户的绑定修复入口，批量写入需由宿主集成脚本调用 repair_agent_mcp_bindings()",
                 "verification_cost": "low",
                 "_learning_aliases": [
                     {"candidate_type": "runtime_governance", "target": "hooks-mcp-agent-profile"},

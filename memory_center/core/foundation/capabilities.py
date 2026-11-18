@@ -6,13 +6,16 @@
 
    ``core_fields`` and ``error_semantics`` are still the canonical description
    of what each capability returns and how it degrades, and regression tests
-   assert them. The ``entries`` column, however, is only partly live:
+   assert them. **None of the ``entries`` kinds is a live 5.0 entry point:**
 
    ======================  =====================================================
    kind                    5.0 status
    ======================  =====================================================
-   ``mcp_admin_action``    **live** — registered by
-                           ``application.admin.build_admin_registry()``
+   ``mcp_admin_action``    legacy — resolves in ``application.admin.
+                           build_admin_registry()`` and is covered by many
+                           tests, but that registry has **no production
+                           caller in 5.0**. The 4.x ``mc_admin`` tool was
+                           retired (see ``docs/MCP_GUIDE.md`` §8).
    ``http``                legacy — ``/workspace/*`` paths were replaced by
                            ``/api/v1/*`` routers in ``service/``
    ``mcp_tool``            legacy — ``mc_context_pack`` / ``mc_freshness`` /
@@ -23,9 +26,11 @@
                            entries remain in this matrix.
    ======================  =====================================================
 
-   For the real 5.0 surfaces use ``service/platform_mcp.register_tools`` (MCP
-   tools), ``service/*_routes.py`` (HTTP) and ``application.admin`` (admin
-   actions). Never add a ``cli`` entry here: ``tests/entrypoints/
+   This module is therefore a **historical contract description, not an
+   entry-point registry**. For the real 5.0 surfaces use
+   ``service/platform_mcp.register_tools`` (17 MCP tools),
+   ``service/*_routes.py`` (``/api/v1/*`` HTTP) and the admin UI ``/admin/``.
+   Never add a ``cli`` entry here: ``tests/entrypoints/
    test_capability_matrix.py`` asserts there are none.
 """
 from __future__ import annotations
@@ -61,12 +66,17 @@ def _mcp_admin(action: str) -> EntryPoint:
     return EntryPoint(kind="mcp_admin_action", identifier=action)
 
 
-# Which declared kinds are still wired to a real 5.0 entry point. Tests use
-# these sets to turn "this matrix is partly historical" into an assertion:
-# LIVE entries must resolve against the real registry, and nothing outside
-# LIVE | LEGACY may be declared without a deliberate contract change.
-LIVE_ENTRY_KINDS: frozenset[str] = frozenset({"mcp_admin_action"})
-LEGACY_ENTRY_KINDS: frozenset[str] = frozenset({"http", "mcp_tool"})
+# No declared kind is exposed as a 5.0 entry point. The matrix is retained
+# solely as the B-01 contract description for core_fields / error_semantics.
+# Tests use these sets to turn "this matrix is entirely historical" into an
+# assertion: LIVE stays empty, every declared kind must be classified, and
+# ENGINE_BACKED identifiers must still resolve against the legacy registry.
+LIVE_ENTRY_KINDS: frozenset[str] = frozenset()
+LEGACY_ENTRY_KINDS: frozenset[str] = frozenset({"http", "mcp_tool", "mcp_admin_action"})
+# Legacy kinds whose identifiers still resolve against an engine-side registry
+# covered by regression tests — useful for verifying engine behaviour, but not
+# reachable from any 5.0 service/MCP/CLI surface.
+ENGINE_BACKED_ENTRY_KINDS: frozenset[str] = frozenset({"mcp_admin_action"})
 DECLARED_ENTRY_KINDS: frozenset[str] = LIVE_ENTRY_KINDS | LEGACY_ENTRY_KINDS
 
 
@@ -275,7 +285,7 @@ def all_mcp_tools() -> list[str]:
 
 
 def all_mcp_admin_actions() -> list[str]:
-    """Return sorted unique mc_admin action names across all capabilities (live)."""
+    """Return sorted unique mc_admin action names (legacy, engine-backed only)."""
     actions = set()
     for cap in CAPABILITIES:
         for e in cap.entries:
