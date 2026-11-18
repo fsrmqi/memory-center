@@ -6,6 +6,7 @@ from typing import Any
 import yaml
 
 from memory_center.core.foundation.models import Rule
+from memory_center.core.governance.rule_checks import normalize_repair_steps, validate_check
 from memory_center.core.storage.workspace import WorkspaceStore
 
 
@@ -384,13 +385,52 @@ def ensure_default_rules(store: WorkspaceStore) -> Path:
     return path
 
 
+def validate_rule_item(item: dict[str, Any]) -> list[str]:
+    """Return problems that must block loading of one rule definition.
+
+    只校验 ``enforcement`` 相关的新契约；历史规则全部缺省为 advisory，不受影响。
+    """
+    problems: list[str] = []
+    enforcement = str(item.get("enforcement") or "advisory").strip()
+    if enforcement not in ("advisory", "gate", "off"):
+        problems.append(f"enforcement={enforcement!r} 非法，可选值：advisory、gate、off")
+        return problems
+    if enforcement != "gate":
+        return problems
+
+    check = item.get("check")
+    if not isinstance(check, dict) or not check:
+        problems.append("enforcement=gate 的规则必须给出 check（可机检判据）")
+    else:
+        problems.extend(validate_check(check))
+    steps = normalize_repair_steps(item.get("repair_steps")) or normalize_repair_steps(item.get("checklist"))
+    if not steps:
+        problems.append("enforcement=gate 的规则必须给出 repair_steps（违规时按序执行的修复步骤）")
+    return problems
+
+
 def load_rules(store: WorkspaceStore) -> list[Rule]:
     ensure_default_rules(store)
     rules: list[Rule] = []
     for path in store.rules_dir.glob("*.yaml"):
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         for item in data.get("rules", []):
-            rules.append(Rule(**item))
+            problems = validate_rule_item(item)
+            if problems:
+                rule_id = str(item.get("id") or "<未命名>")
+                guidance = (
+                    "Step 1: 确认该规则是否真的需要硬性拦截；只需提示就把 enforcement 设为 advisory。\n"
+                    "Step 2: 需要拦截则补 check（kind 见 core.governance.rule_checks.CHECK_KINDS）"
+                    "与按序的 repair_steps，再重新加载。"
+                )
+                raise ValueError(
+                    f"规则 {rule_id} 定义非法（{path.name}）：\n  - "
+                    + "\n  - ".join(problems)
+                    + f"\n{guidance}"
+                )
+            normalized = dict(item)
+            normalized["repair_steps"] = normalize_repair_steps(item.get("repair_steps"))
+            rules.append(Rule(**normalized))
     return rules
 
 

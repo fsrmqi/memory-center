@@ -1194,6 +1194,36 @@ Write placement, auto-sync strategy, and eval penalties can now also be tuned th
 - `rules/auto-sync-rules.yaml`
 - `rules/eval-rules.yaml`
 
+### 规则的可执行判据 / Executable rule checks
+
+规则默认只做上下文提示（`enforcement: advisory`）。需要硬性拦截时声明 `enforcement: gate`，并同时给出可机检的 `check` 与按序的 `repair_steps`：加载阶段会校验这两项，缺任意一项直接拒绝加载；评估结果的每条违规都内嵌修复步骤，调用方无需回读规则。
+
+Rules default to context-only hints (`enforcement: advisory`). Declaring `enforcement: gate` requires both a machine-checkable `check` and ordered `repair_steps`; loading rejects a gate rule missing either, and every finding carries the steps inline.
+
+```yaml
+rules:
+  - id: ARCH-001
+    title: core 不得依赖 application
+    scope: [architecture]
+    severity: must
+    rule: core 子包不得导入 application / service / platform。
+    enforcement: gate
+    check:
+      kind: forbidden_import
+      config:
+        path_prefix: memory_center/core
+        forbidden_prefixes:
+          - memory_center.application
+          - memory_center.platform
+          - memory_center.service
+    repair_steps:
+      - Step 1: 定位 core 里对该上层的导入点。
+      - Step 2: 把该能力下沉到 core 内合适的子包；只在函数内延迟导入不算修复。
+```
+
+支持的 `check.kind`：`forbidden_import`、`max_lines`、`max_params`，全部为纯 AST 静态分析，不导入也不执行被检查代码。`memory_center.core.governance.rule_checks.evaluate_gate_rules(rules, source_root)` 返回按规则的违规清单。`repair_steps` 里的 `- Step 1: ...` 在 YAML 中会被解析为单键映射，加载时自动拍平为字符串，无需给每行加引号。
+
+
 Daily continuity view is now available through `mc_admin(action="continuity")`, which aggregates focus task, resume packet, next actions, unresolved items, receipts, handoffs and evidence.
 
 现在还提供了日常连续性视图 `mc_admin(action="continuity")`，会汇总当前焦点任务、恢复包、下一步动作、未解决事项、回执、交接历史和近期证据。

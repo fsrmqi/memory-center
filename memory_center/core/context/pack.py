@@ -102,9 +102,11 @@ class ContextPackBuilder:
         risks = match_rules(self._store, intent=query, files=files)[:5]
 
         # 5. Build checklist from risks
+        # gate 规则给出的是按序修复步骤（repair_steps），优先于并列 checklist：
+        # 「先做什么、再做什么」比一组无序检查项更能让 Agent 直接行动。
         checklist = []
         for risk in risks:
-            for item in risk.get("checklist", []):
+            for item in risk.get("repair_steps") or risk.get("checklist", []):
                 if item not in checklist:
                     checklist.append(item)
 

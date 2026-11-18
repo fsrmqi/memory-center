@@ -1,5 +1,26 @@
 # Changelog / 更新日志
 
+## 未发布 / Unreleased
+
+### 新增 / Added
+
+- **规则的可执行判据**：`Rule` 新增 `enforcement`（`advisory` | `gate` | `off`）、`check`（可机检判据）与 `repair_steps`（按序修复步骤）三个字段，全部带默认值，历史规则仍按 `advisory` 工作。`enforcement=gate` 的规则在加载期校验：缺少 `check`、`check` 不合法或缺 `repair_steps` 一律拒绝加载，报错信息给出下一步动作。
+- **判据执行器** `core/governance/rule_checks.py`：支持 `forbidden_import`、`max_lines`、`max_params` 三类纯 AST 静态检查，不导入也不执行被检查代码；`evaluate_gate_rules(rules, source_root)` 返回按规则的违规清单，每条违规内嵌该规则的修复步骤。
+- 上下文包组装（`core/context/pack.py`）优先使用 `repair_steps` 而非并列 `checklist`——有序步骤比无序检查项更能直接驱动 Agent 行动。
+- YAML 中 `- Step 1: 说明` 会被解析为单键映射，加载时自动拍平为字符串，作者无需给每行加引号。
+
+### 文档 / Docs
+
+- README 增加「规则的可执行判据」中英双语小节与 YAML 示例。
+
+### 变更 / Changed
+
+- 规则违规结果对既有消费方向后兼容：新增字段只做增量，`match_rules` 输出结构不变（新增可选键），MCP 工具 schema 与命令参数均无破坏性变更。
+
+### 已知边界 / Known limits
+
+- 本版只提供判据的定义、校验与评估函数，尚未接入 MCP 工具或宿主 hook；把 `evaluate_gate_rules` 接到入口（pre-edit hook 或 CI 门禁）是下一步。
+
 ## 5.0.0b29 — MCP 握手版本修正 / Correct MCP handshake version
 
 ### 修复 / Fixed

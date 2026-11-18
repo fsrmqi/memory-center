@@ -186,6 +186,15 @@ class Rule:
     file_patterns: list[str] = field(default_factory=list)
     trigger_keywords: list[str] = field(default_factory=list)
     checklist: list[str] = field(default_factory=list)
+    # 规则的执行强度：advisory 只注入提示；gate 必须带可执行 check，
+    # 由 core.governance.rule_checks 评估；off 保留规则但不投放。
+    enforcement: str = "advisory"
+    # 可机检的判据描述，形如 {"kind": "forbidden_import", "config": {...}}。
+    # kind 的取值见 core.governance.rule_checks.CHECK_KINDS。
+    check: dict[str, Any] = field(default_factory=dict)
+    # 违规时按顺序给出的修复步骤（Step 1..N）。gate 规则必须给出，
+    # 否则违规信息无法自解释——这正是把规则从"提示"变成"约束"的前提。
+    repair_steps: list[str] = field(default_factory=list)
 
 
 @dataclass
