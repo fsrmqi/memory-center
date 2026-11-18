@@ -7,6 +7,8 @@
 - **运行时诊断不再推荐已移除的命令**：`_recommended_actions()` 原先建议 `setup-agent`、`generate-hooks --host codex`、`runtime-audit --fix`、`reindex --workspace`，而这些子命令在 5.0 已全部移除（`memory-center` 现在只启动服务，无任何子命令）。改为给出 5.0 可执行的替代：`mc_admin(action="runtime_audit", force=true)` 补齐 MCP 绑定、管理页重试失败作业。
 - **`codex_missing_scripts` 不再触发待修建议**：5.0 不存在生成 `.codex-hooks/*.sh` 的链路，该字段永远无法满足，若参与判断会让每个带 `hooks.yaml` 的 workspace 长期显示一条无解建议。触发条件收窄为 `config_valid=False`（真正的格式错误），字段本身仍如实报告。
 - `core/audit/runtime.py` 的 `agent_mcp_repair` 候选建议由 `runtime-audit --fix` 改为 `mc_admin(action="runtime_audit", force=true)`。
+- **能力矩阵不再冒充 5.0 入口注册表**：`core/foundation/capabilities.py` 原声明 14 条 `_cli(...)`（`change-review`、`runtime-audit`、`workflow-profile` 等），但 `memory-center` 在 5.0 只启动服务、没有任何子命令。已删除全部 `cli` 声明与 `_cli()` 构造器；`all_cli_commands()` 保留为兼容 shim，明确恒返回空列表。模块 docstring 现逐类标注 5.0 有效性：`mcp_admin_action` 为 live（14 条均能在 `build_admin_registry()` 解析），`http` 的 `/workspace/*` 与 `mcp_tool` 的 4 个 facade 名为 legacy，`cli` 为 retired。
+- 新增 `LIVE_ENTRY_KINDS` / `LEGACY_ENTRY_KINDS` / `DECLARED_ENTRY_KINDS`，把"这份矩阵部分属于历史"从注释变成可供测试与消费方读取的常量。
 
 ### 文档 / Docs
 
@@ -18,11 +20,13 @@
 ### 测试 / Tests
 
 - `tests/entrypoints/test_runtime_inspect.py`：原 `test_runtime_inspect_reports_missing_hook_scripts` 断言必须出现 `generate-hooks --host codex` 建议，改为断言不再出现已移除命令，并新增非法 `hooks.yaml` 仍给出可执行建议的用例。
+- `tests/entrypoints/test_capability_matrix.py`：原 `test_all_cli_commands_returns_non_empty` 只断言"非空"，因此 14 条假 CLI 声明从未被发现；改为断言 `all_cli_commands() == []`。原 `test_mcp_admin_actions_in_dispatch` 用 `inspect.getsource` 做字符串包含（注释里出现同名字符串即可通过），改为用真实 `build_admin_registry().has()` 校验。
+- 新增 `TestEntryPointTruthfulness` 4 项：不得残留 `cli` 声明、所有声明的 kind 必须属于 `DECLARED_ENTRY_KINDS`、legacy 的 4 个 MCP 工具名确实不在 `service/platform_mcp.py`、legacy 的 17 条 `/workspace/*` 路径确实不在三个 5.0 路由模块中。违规信息内嵌 Step 1 / Step 2。注入假 `cli` 声明后由两条断言同时拦下，撤除后恢复全绿。
 
 ### 已知边界 / Known limits
 
 - `docs/USER_GUIDE.md` 仍有约 60 处 `memory-center <subcommand>` 形式的命令示例（`init`、`reindex`、`query`、`work-start` 等），均为 4.x CLI；5.0 已无 CLI 分发器，这些示例需整体改写为 HTTP / MCP 路线，属独立一轮返工。
-- `core/foundation/capabilities.py` 仍声明 14 条 `_cli(...)` 入口（`change-review`、`runtime-audit`、`workflow-profile` 等），均指向不存在的命令。是否保留 `cli` 这一类入口需先定契约，再同步 `all_cli_commands()` 与对应测试。
+- 能力矩阵中的 17 条 `http` 与 4 条 `mcp_tool` 声明仍是 4.x 路径/工具名，本轮只做显式 legacy 标注与断言，**未删除**：`context-pack`、`freshness`、`onboard`、`domain` 这 4 个能力若删掉这些条目就会失去全部 entry，需要逐一确认它们在 5.0 的真实入口（或确认能力已合并退役）才能改，属独立一轮。
 
 ## 5.0.0b30 — 规则可执行判据与分层门禁 / Executable rule checks and layering gate
 

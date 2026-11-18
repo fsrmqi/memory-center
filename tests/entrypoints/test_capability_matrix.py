@@ -14,6 +14,9 @@ import pytest
 from memory_center.core.foundation.capabilities import (
     CAPABILITIES,
     CAPABILITY_MAP,
+    DECLARED_ENTRY_KINDS,
+    LEGACY_ENTRY_KINDS,
+    LIVE_ENTRY_KINDS,
     all_cli_commands,
     all_http_routes,
     all_mcp_admin_actions,
@@ -100,20 +103,24 @@ class TestMCPCoverage:
         pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
 
     def test_mcp_admin_actions_in_dispatch(self):
-        """Check that mc_admin's action registry contains every action key."""
-        # ``mc_admin`` now delegates to ``application.admin.build_admin_registry``,
-        # so the action table lives there.  The MCP server still references the
-        # registry indirectly, so we inspect the canonical source of truth.
-        from memory_center.application import admin as admin_mod
-        src = inspect.getsource(admin_mod)
+        """Every live entry must resolve against the real admin registry.
+
+        The old check only looked for the action name anywhere in the source
+        text, so a mention in a comment was enough to pass. Resolve against
+        ``CommandRegistry.names()`` instead.
+        """
+        from memory_center.application.admin import build_admin_registry
+
+        registry = build_admin_registry(workspace_file="unused.yaml")
+        registered = set(registry.names())
         for cap in CAPABILITIES:
             for entry in cap.entries:
-                if entry.kind == "mcp_admin_action":
-                    # Actions are keys in the _DISPATCH dict
-                    assert f'"{entry.identifier}"' in src, (
-                        f"MCP admin action '{entry.identifier}' for capability "
-                        f"'{cap.name}' not found in application admin registry"
+                if entry.kind in LIVE_ENTRY_KINDS:
+                    assert registry.has(entry.identifier), (
+                        f"live entry '{entry.identifier}' for capability "
+                        f"'{cap.name}' is not registered by build_admin_registry()"
                     )
+        assert set(all_mcp_admin_actions()) <= registered
 
 
 # ---------------------------------------------------------------------------
@@ -123,9 +130,9 @@ class TestMCPCoverage:
 class TestEntryPointHelpers:
     """Verify the helper functions return expected aggregated data."""
 
-    def test_all_cli_commands_returns_non_empty(self):
-        cmds = all_cli_commands()
-        assert len(cmds) > 0
+    def test_all_cli_commands_is_empty_in_5_0(self):
+        """``memory-center`` has no subcommands, so the shim must stay empty."""
+        assert all_cli_commands() == []
 
     def test_all_http_routes_returns_non_empty(self):
         routes = all_http_routes()
@@ -153,6 +160,67 @@ class TestEntryPointHelpers:
         assert "http" in kinds
         assert "mcp_tool" in kinds
         assert "cli" not in kinds
+
+
+# ---------------------------------------------------------------------------
+# 5b. Truthfulness: the matrix must not claim entry points 5.0 does not have
+# ---------------------------------------------------------------------------
+
+class TestEntryPointTruthfulness:
+    """Turn 'this matrix is partly historical' into executable assertions.
+
+    The B-01 matrix still describes core fields and error semantics that
+    regression tests rely on, but most of its entry points belong to 4.x.
+    These tests stop that historical data from being read as a live registry.
+    """
+
+    def test_no_cli_entries_remain(self):
+        for cap in CAPABILITIES:
+            bad = [e.identifier for e in cap.entries if e.kind == "cli"]
+            assert not bad, (
+                f"{cap.name} still declares CLI entry point(s) {bad}.\n"
+                "Step 1: memory-center has no subcommands in 5.0; remove the cli entry.\n"
+                "Step 2: point the capability at a live mc_admin action instead."
+            )
+
+    def test_every_declared_kind_is_classified(self):
+        kinds = {e.kind for cap in CAPABILITIES for e in cap.entries}
+        assert kinds, "matrix lost all its entry declarations"
+        assert kinds <= set(DECLARED_ENTRY_KINDS), (
+            f"unclassified entry kinds: {sorted(kinds - set(DECLARED_ENTRY_KINDS))}.\n"
+            "Step 1: add the new kind to LIVE_ENTRY_KINDS or LEGACY_ENTRY_KINDS.\n"
+            "Step 2: add a matching verification test."
+        )
+        assert not (LIVE_ENTRY_KINDS & LEGACY_ENTRY_KINDS)
+
+    def test_legacy_mcp_tool_names_are_absent_from_5_0_surface(self):
+        """Names marked legacy must not have become live tools unnoticed."""
+        from memory_center.service import platform_mcp
+
+        src = inspect.getsource(platform_mcp)
+        for name in all_mcp_tools():
+            assert f"def {name}(" not in src, (
+                f"{name} is declared legacy but is now a live 5.0 tool; "
+                "move it out of LEGACY_ENTRY_KINDS and update the matrix."
+            )
+
+    def test_legacy_http_paths_are_absent_from_5_0_routers(self):
+        """The /workspace/* paths must not be registered by any 5.0 router."""
+        from memory_center.service import (
+            governance_routes,
+            platform_routes,
+            workspace_routes,
+        )
+
+        src = "\n".join(
+            inspect.getsource(mod)
+            for mod in (governance_routes, platform_routes, workspace_routes)
+        )
+        for path in all_http_routes():
+            assert f"'{path}'" not in src and f'"{path}"' not in src, (
+                f"{path} is declared legacy but appears in a 5.0 router; "
+                "reclassify it as live."
+            )
 
 
 # ---------------------------------------------------------------------------

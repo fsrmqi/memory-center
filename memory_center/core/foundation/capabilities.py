@@ -1,7 +1,32 @@
-"""Capability matrix mapping each feature to its CLI / HTTP / MCP entry points.
+"""B-01 (4.x) capability matrix: features, core fields and error semantics.
 
-This module is a single source of truth for "which entry covers which capability".
-Tests import this matrix to verify coverage and to catch unintentional gaps.
+.. warning::
+
+   **This is a historical contract matrix, not the 5.0 entry-point registry.**
+
+   ``core_fields`` and ``error_semantics`` are still the canonical description
+   of what each capability returns and how it degrades, and regression tests
+   assert them. The ``entries`` column, however, is only partly live:
+
+   ======================  =====================================================
+   kind                    5.0 status
+   ======================  =====================================================
+   ``mcp_admin_action``    **live** — registered by
+                           ``application.admin.build_admin_registry()``
+   ``http``                legacy — ``/workspace/*`` paths were replaced by
+                           ``/api/v1/*`` routers in ``service/``
+   ``mcp_tool``            legacy — ``mc_context_pack`` / ``mc_freshness`` /
+                           ``mc_onboard`` / ``mc_domain`` are not on the
+                           5.0 tool surface (see ``service/platform_mcp.py``)
+   ``cli``                 retired — ``memory-center`` has no subcommands at
+                           all; it only launches the service. No ``cli``
+                           entries remain in this matrix.
+   ======================  =====================================================
+
+   For the real 5.0 surfaces use ``service/platform_mcp.register_tools`` (MCP
+   tools), ``service/*_routes.py`` (HTTP) and ``application.admin`` (admin
+   actions). Never add a ``cli`` entry here: ``tests/entrypoints/
+   test_capability_matrix.py`` asserts there are none.
 """
 from __future__ import annotations
 
@@ -11,8 +36,8 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class EntryPoint:
     """One entry point for a capability."""
-    kind: str          # "cli", "http", "mcp_tool", "mcp_admin_action"
-    identifier: str    # CLI command name, HTTP path, MCP tool name, or mc_admin action
+    kind: str          # "http", "mcp_tool" or "mcp_admin_action" (see module docstring)
+    identifier: str    # HTTP path, MCP tool name, or mc_admin action
 
 
 @dataclass(frozen=True)
@@ -22,10 +47,6 @@ class Capability:  # noqa: UP006 – keep explicit generics for Py 3.9 compat
     core_fields: list[str] = field(default_factory=list)
     error_semantics: str = ""
     entries: list[EntryPoint] = field(default_factory=list)
-
-
-def _cli(cmd: str) -> EntryPoint:
-    return EntryPoint(kind="cli", identifier=cmd)
 
 
 def _http(path: str) -> EntryPoint:
@@ -40,8 +61,17 @@ def _mcp_admin(action: str) -> EntryPoint:
     return EntryPoint(kind="mcp_admin_action", identifier=action)
 
 
+# Which declared kinds are still wired to a real 5.0 entry point. Tests use
+# these sets to turn "this matrix is partly historical" into an assertion:
+# LIVE entries must resolve against the real registry, and nothing outside
+# LIVE | LEGACY may be declared without a deliberate contract change.
+LIVE_ENTRY_KINDS: frozenset[str] = frozenset({"mcp_admin_action"})
+LEGACY_ENTRY_KINDS: frozenset[str] = frozenset({"http", "mcp_tool"})
+DECLARED_ENTRY_KINDS: frozenset[str] = LIVE_ENTRY_KINDS | LEGACY_ENTRY_KINDS
+
+
 # ---------------------------------------------------------------------------
-# The 14 capabilities required by B-01
+# The B-01 capability contracts (18 entries, 14 of them required by the suite)
 # ---------------------------------------------------------------------------
 
 CAPABILITIES: list[Capability] = [
@@ -50,7 +80,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["workflow", "status", "scope_checked", "refresh", "summary", "actions", "invocation_budget"],
         error_semantics="no changes -> no_changes; refresh failure -> stale/unknown evidence with fallback",
         entries=[
-            _cli("change-review"),
             _http("/workspace/change-review"),
             _mcp_admin("change_review"),
         ],
@@ -60,7 +89,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["benchmark", "ground_truth_mode", "algorithm_version", "status", "summary"],
         error_semantics="git execution failures -> environment_error and excluded from aggregates",
         entries=[
-            _cli("eval-cochange"),
             _http("/workspace/eval-cochange"),
             _mcp_admin("eval_cochange"),
         ],
@@ -95,7 +123,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["flows", "flow_count"],
         error_semantics="missing workspace -> error dict; no seed -> empty flows",
         entries=[
-            _cli("business-flow"),
             _http("/workspace/business-flow"),
             _mcp_admin("business_flow"),
         ],
@@ -105,7 +132,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["impact", "flow_impact"],
         error_semantics="missing node_id -> error; node not found -> empty impact",
         entries=[
-            _cli("business-flow-impact"),
             _http("/workspace/business-flow-impact"),
             _mcp_admin("business_flow_impact"),
         ],
@@ -115,7 +141,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["checklist", "status"],
         error_semantics="missing intent -> uses default; loop failure -> diagnostics",
         entries=[
-            _cli("verification-loop"),
             _http("/workspace/verification-loop"),
             _mcp_admin("verification_loop"),
         ],
@@ -125,7 +150,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["name", "description", "steps", "applicable_when", "tools_sequence"],
         error_semantics="unknown profile name -> error with valid options",
         entries=[
-            _cli("workflow-profile"),
             _http("/workspace/workflow-profile"),
             _mcp_admin("workflow_profile"),
         ],
@@ -135,7 +159,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["audit_record", "findings", "quality", "score"],
         error_semantics="missing hooks.yaml -> empty audit with diagnostics",
         entries=[
-            _cli("runtime-audit"),
             _http("/workspace/runtime-audit"),
             _mcp_admin("runtime_audit"),
         ],
@@ -145,7 +168,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["alerts", "total_regressions", "critical_count", "warning_count", "health"],
         error_semantics="missing benchmark data -> empty alerts",
         entries=[
-            _cli("regression-alerts"),
             _http("/workspace/regression-alerts"),
             _mcp_admin("regression_alerts"),
         ],
@@ -155,7 +177,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["workspace", "files_scanned", "projects", "tree_sitter", "summary", "regressions", "improvements", "score", "quality"],
         error_semantics="tree-sitter unavailable -> diagnostics in tree_sitter; no Java files -> empty status",
         entries=[
-            _cli("eval-parser-benchmark"),
             _http("/workspace/eval-parser-benchmark"),
             _mcp_admin("eval_parser_benchmark"),
         ],
@@ -165,7 +186,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["summary", "thresholds", "cases"],
         error_semantics="missing graph/cases -> validation error; unresolved calls -> explicit unresolved_rate",
         entries=[
-            _cli("eval-java-call-resolution"),
             _http("/workspace/eval-java-call-resolution"),
             _mcp_admin("eval_java_call_resolution"),
         ],
@@ -175,7 +195,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["consistent", "comparisons", "divergences"],
         error_semantics="missing graph.db or exported JSONL -> diagnostics",
         entries=[
-            _cli("backend-consistency"),
             _http("/workspace/backend-consistency"),
             _mcp_admin("backend_consistency"),
         ],
@@ -185,7 +204,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["ref", "content", "summary"],
         error_semantics="missing ref_path -> error; ref not found -> not_found",
         entries=[
-            _cli("drill-ref"),
             _http("/workspace/drill-ref"),
             _mcp_admin("drill_ref"),
         ],
@@ -195,7 +213,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["events", "event_count"],
         error_semantics="no events -> empty list; missing session_id uses recent",
         entries=[
-            _cli("drill-timeline"),
             _http("/workspace/drill-timeline"),
             _mcp_admin("drill_timeline"),
         ],
@@ -205,7 +222,6 @@ CAPABILITIES: list[Capability] = [
         core_fields=["task", "artifacts", "history"],
         error_semantics="missing task_id -> error; task not found -> not_found",
         entries=[
-            _cli("drill-task"),
             _http("/workspace/drill-task"),
             _mcp_admin("drill_task"),
         ],
@@ -228,17 +244,18 @@ def entries_by_kind(capability_name: str) -> dict[str, list[str]]:
 
 
 def all_cli_commands() -> list[str]:
-    """Return sorted unique CLI command names across all capabilities."""
-    cmds = set()
-    for cap in CAPABILITIES:
-        for e in cap.entries:
-            if e.kind == "cli":
-                cmds.add(e.identifier)
-    return sorted(cmds)
+    """Return an empty list: 5.0 has no CLI subcommands.
+
+    ``memory-center`` only launches the resident service (``service.main``
+    parses --host/--port/--data-dir and friends). Kept as a compatibility
+    shim for historical importers; the accompanying test asserts it stays
+    empty so a phantom CLI cannot creep back in unnoticed.
+    """
+    return []
 
 
 def all_http_routes() -> list[str]:
-    """Return sorted unique HTTP routes across all capabilities."""
+    """Return sorted unique HTTP routes across all capabilities (legacy paths)."""
     routes = set()
     for cap in CAPABILITIES:
         for e in cap.entries:
@@ -248,7 +265,7 @@ def all_http_routes() -> list[str]:
 
 
 def all_mcp_tools() -> list[str]:
-    """Return sorted unique MCP tool names across all capabilities."""
+    """Return sorted unique MCP tool names across all capabilities (legacy names)."""
     tools = set()
     for cap in CAPABILITIES:
         for e in cap.entries:
@@ -258,7 +275,7 @@ def all_mcp_tools() -> list[str]:
 
 
 def all_mcp_admin_actions() -> list[str]:
-    """Return sorted unique mc_admin action names across all capabilities."""
+    """Return sorted unique mc_admin action names across all capabilities (live)."""
     actions = set()
     for cap in CAPABILITIES:
         for e in cap.entries:
