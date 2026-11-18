@@ -24,7 +24,7 @@ from typing import Any
 
 from click import UsageError
 
-from memory_center.core.observability.diagnostics import safe_reason
+from memory_center.core.foundation.redaction import safe_reason
 
 # Canonical error types and their HTTP status codes
 ERROR_TYPES: dict[str, int] = {

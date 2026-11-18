@@ -10,26 +10,25 @@ memory_lifecycle / context_assembler ledger / PURPOSE_PRESETS)。
 """
 from __future__ import annotations
 
-import json
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from memory_center.core.foundation.hotness import (
-    hotness_score,
     case_last_hit,
+    hotness_score,
     rank_cases_by_hotness,
 )
-from memory_center.core.foundation.served_ledger import (
+from memory_center.core.orchestrator.query import memory_query_hybrid
+from memory_center.core.orchestrator.resume import _resume_related_cases
+from memory_center.core.retrieval.policy import classify_purpose, select_retrieval_policy
+from memory_center.core.retrieval.policy_rules import RETRIEVAL_POLICY_RULES_FILE, load_purpose_deltas
+from memory_center.core.storage.served_ledger import (
     MAX_SERVED_PATHS,
     extract_file_paths_from_payload,
     paths_refer_to_same_file,
     record_served_files,
     served_files,
 )
-from memory_center.core.orchestrator.query import memory_query_hybrid
-from memory_center.core.orchestrator.resume import _resume_related_cases
-from memory_center.core.retrieval.policy import classify_purpose, select_retrieval_policy
-from memory_center.core.retrieval.policy_rules import RETRIEVAL_POLICY_RULES_FILE, load_purpose_deltas
 from memory_center.core.storage.workspace import WorkspaceStore
 
 NOW = datetime(2026, 9, 1, tzinfo=timezone.utc)

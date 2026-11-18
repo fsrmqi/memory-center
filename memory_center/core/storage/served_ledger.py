@@ -1,18 +1,22 @@
 """跨调用已服务文件账本(设计参考 OpenViking context_assembler/ledger.py)。
 
-兼容门面：记录"本会话已经给模型看过的文件路径集合",供后续检索把重复结果降权,
+记录"本会话已经给模型看过的文件路径集合",供后续检索把重复结果降权,
 避免长会话里 mc_lookup 反复返回同一批文件占用 token。与 OV 的语义一致:
 
 - 账本由 storage.SessionStateRepository 写入 SQLite；任何读写失败都降级为"无去重",绝不阻断查询;
 - 按会话(session_id)隔离;无 session_id 的调用不记录也不降权;
 - 有界:每个会话最多保留 MAX_SERVED_PATHS 条路径,超限丢弃最旧的。
+
+归属：本模块是会话状态账本，属于 storage（基础事实与访问能力）。此前位于
+``core.foundation``，导致基础层反向依赖 storage；按 foundation/README.md
+「不得承载工作区 I/O」的边界迁至此处。
 """
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
 
-from memory_center.core.storage.session_state import MAX_SERVED_PATHS, SessionStateRepository
+from .session_state import MAX_SERVED_PATHS, SessionStateRepository
 
 # 兼容旧导入；状态已迁移为 SQLite 的 session_state，不再直接写 JSON 文件。
 LEDGER_FILENAME = "served-ledger.json"

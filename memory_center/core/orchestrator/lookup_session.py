@@ -13,7 +13,7 @@ def apply_served_file_downweight(
     applied = False
     if session_id.strip():
         try:
-            from memory_center.core.foundation.served_ledger import paths_refer_to_same_file, served_files
+            from memory_center.core.storage.served_ledger import paths_refer_to_same_file, served_files
 
             served = served_files(workspace_file, session_id)
             results = payload.get("results", [])
@@ -38,7 +38,7 @@ def record_lookup_delivery(workspace_file: str | Path, session_id: str, payload:
     if not session_id.strip():
         return
     try:
-        from memory_center.core.foundation.served_ledger import extract_file_paths_from_payload, record_served_files
+        from memory_center.core.storage.served_ledger import extract_file_paths_from_payload, record_served_files
 
         record_served_files(workspace_file, session_id, extract_file_paths_from_payload(payload), tier=tier)
     except Exception:
