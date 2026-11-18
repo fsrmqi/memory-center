@@ -1,0 +1,91 @@
+# Memory Center 自身的门禁规则 / Gate rules for this repository
+#
+# 由 scripts/check_rules.py（CI: .github/workflows/ci.yml）执行；只评估
+# enforcement: gate 的规则，advisory 规则仅作上下文提示。
+# 依据：docs/ARCHITECTURE.md 的分层方向 service → platform → application + core。
+
+rules:
+  - id: ARCH-001
+    title: core 不得依赖上层
+    scope: [architecture, core]
+    severity: must
+    rule: memory_center/core 下的模块不得导入 application、platform 或 service。
+    reason: core 是被复用的引擎；反向依赖会让引擎与入口生命周期耦合，并使按需加载失效。
+    file_patterns:
+      - "memory_center/core/**/*.py"
+    trigger_keywords: [分层, 依赖方向, core, application, platform]
+    enforcement: gate
+    check:
+      kind: forbidden_import
+      config:
+        path_prefix: memory_center/core
+        forbidden_prefixes:
+          - memory_center.application
+          - memory_center.platform
+          - memory_center.service
+    repair_steps:
+      - Step 1: 定位 core 中对上层的导入点；函数内延迟导入同样算违规（ADR-0001 明确禁止以延迟导入规避）。
+      - Step 2: 若被依赖的是纯类型或纯函数，下沉到 core.foundation；若属于领域能力，移到 core 内更合适的子包。
+      - Step 3: 若该逻辑本质是跨领域编排，把调用方上移到 application，再由入口层调用。
+
+  - id: ARCH-002
+    title: application 不得依赖 platform 或 service
+    scope: [architecture, application]
+    severity: must
+    rule: memory_center/application 不得导入 platform 或 service。
+    reason: application 组合 core 用例；platform 与 service 在其之上，反向依赖会造成分层倒挂。
+    file_patterns:
+      - "memory_center/application/**/*.py"
+    trigger_keywords: [分层, application, platform, service]
+    enforcement: gate
+    check:
+      kind: forbidden_import
+      config:
+        path_prefix: memory_center/application
+        forbidden_prefixes:
+          - memory_center.platform
+          - memory_center.service
+    repair_steps:
+      - Step 1: 确认被依赖的符号是否真是控制面/入口能力；是则把调用方向上移到 platform 或 service。
+      - Step 2: 若只是共用类型或异常，下沉到 core 后再依赖。
+
+  - id: ARCH-003
+    title: platform 不得依赖 service
+    scope: [architecture, platform]
+    severity: must
+    rule: memory_center/platform 不得导入 service。
+    reason: service 只负责生命周期与入口边界，platform 若依赖它，服务无法独立测试与复用。
+    file_patterns:
+      - "memory_center/platform/**/*.py"
+    trigger_keywords: [分层, platform, service]
+    enforcement: gate
+    check:
+      kind: forbidden_import
+      config:
+        path_prefix: memory_center/platform
+        forbidden_prefixes:
+          - memory_center.service
+    repair_steps:
+      - Step 1: 找到 platform 里对 service 的引用点。
+      - Step 2: 把该能力留在 platform 并改为由 service 注入，或把调用点上移到 service。
+
+  - id: SIZE-001
+    title: 单文件行数天花板
+    scope: [size]
+    severity: warning
+    rule: 单个 Python 文件不超过 2600 行。
+    reason: >-
+      这是一个防止继续膨胀的天花板，不是质量目标（当前最大文件约 2473 行）。
+      拆分后应把上限下调，让它持续逼近真实目标值。
+    file_patterns:
+      - "memory_center/**/*.py"
+    trigger_keywords: [类过大, 拆分类, 行数]
+    enforcement: gate
+    check:
+      kind: max_lines
+      config:
+        path_prefix: memory_center
+        max: 2600
+    repair_steps:
+      - Step 1: 按职责拆分该模块，或把可复用逻辑提取到同级子模块。
+      - Step 2: 拆分后下调本规则的 max，使天花板跟随实际收敛。

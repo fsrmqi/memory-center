@@ -35,6 +35,10 @@ jobs:
       - name: "Lint (advisory: full ruff)"
         continue-on-error: true
         run: ruff check . --output-format=concise
+      - name: "Rule gate (layering / size)"
+        # 规则的 gate 判据：分层方向与单文件行数天花板。规则定义见 .github/gate-rules.yaml，
+        # 用户项目可用同一脚本挂到自己的 CI。 / Same script is reusable for user workspaces.
+        run: python scripts/check_rules.py --rules .github/gate-rules.yaml --source-root .
       - uses: actions/setup-node@v4
         with:
           node-version: "22"

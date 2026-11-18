@@ -4,6 +4,7 @@
 
 ### 新增 / Added
 
+- **规则门禁入口** `scripts/check_rules.py`：加载规则 YAML、只评估 `enforcement: gate` 的规则、汇总违规；退出码 `0` 通过 / `1` 有违规 / `2` 规则或参数错误，`--format json` 供机器消费。编排逻辑在 `core/governance/rule_gate.py`，脚本本身只做参数解析与输出。本仓库已用 `.github/gate-rules.yaml` 卡住分层方向（core / application / platform 三条禁止导入）与单文件行数天花板，并在 CI 新增 `Rule gate` 步骤执行。
 - **规则的可执行判据**：`Rule` 新增 `enforcement`（`advisory` | `gate` | `off`）、`check`（可机检判据）与 `repair_steps`（按序修复步骤）三个字段，全部带默认值，历史规则仍按 `advisory` 工作。`enforcement=gate` 的规则在加载期校验：缺少 `check`、`check` 不合法或缺 `repair_steps` 一律拒绝加载，报错信息给出下一步动作。
 - **判据执行器** `core/governance/rule_checks.py`：支持 `forbidden_import`、`max_lines`、`max_params` 三类纯 AST 静态检查，不导入也不执行被检查代码；`evaluate_gate_rules(rules, source_root)` 返回按规则的违规清单，每条违规内嵌该规则的修复步骤。
 - 上下文包组装（`core/context/pack.py`）优先使用 `repair_steps` 而非并列 `checklist`——有序步骤比无序检查项更能直接驱动 Agent 行动。
@@ -11,7 +12,7 @@
 
 ### 文档 / Docs
 
-- README 增加「规则的可执行判据」中英双语小节与 YAML 示例。
+- README 增加「规则的可执行判据」中英双语小节、YAML 示例与门禁脚本用法。
 
 ### 变更 / Changed
 
@@ -19,7 +20,8 @@
 
 ### 已知边界 / Known limits
 
-- 本版只提供判据的定义、校验与评估函数，尚未接入 MCP 工具或宿主 hook；把 `evaluate_gate_rules` 接到入口（pre-edit hook 或 CI 门禁）是下一步。
+- 门禁只走 CI / 脚本入口，尚未接入 MCP 工具或宿主 hook：`mc_*` 工具面不提供规则评估，`pre_edit` 类实时拦截未恢复（5.0 主树已无 `memory_center/hooks/`）。
+- 行数天花板 2600 是防继续膨胀的上限，不是质量目标（当前最大文件约 2473 行，`core/tasks/artifacts.py`）；函数参数上限暂未纳入本仓库门禁（现有最大为 `build_admin_registry` 的 49 个 `**kwargs` 透传）。
 
 ## 5.0.0b29 — MCP 握手版本修正 / Correct MCP handshake version
 

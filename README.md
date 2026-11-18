@@ -1223,6 +1223,25 @@ rules:
 
 支持的 `check.kind`：`forbidden_import`、`max_lines`、`max_params`，全部为纯 AST 静态分析，不导入也不执行被检查代码。`memory_center.core.governance.rule_checks.evaluate_gate_rules(rules, source_root)` 返回按规则的违规清单。`repair_steps` 里的 `- Step 1: ...` 在 YAML 中会被解析为单键映射，加载时自动拍平为字符串，无需给每行加引号。
 
+门禁入口是 `scripts/check_rules.py`，可直接挂到任意 CI：
+
+```bash
+python scripts/check_rules.py --rules .github/gate-rules.yaml --source-root .
+# 退出码：0 通过 / 1 有违规 / 2 规则或参数错误；--format json 供机器消费
+```
+
+本仓库自身用 `.github/gate-rules.yaml` 卡住分层方向与单文件行数天花板，并在 CI 的 `Rule gate` 步骤执行。示例输出：
+
+```text
+[ARCH-001] 1 处违规（forbidden_import，检查 256 个文件）
+  - memory_center/core/foundation/_gate_probe.py:1  禁止导入 memory_center.application（命中规则 forbidden_prefixes）
+  修复步骤：
+    Step 1: 定位 core 中对上层的导入点；函数内延迟导入同样算违规（ADR-0001 明确禁止以延迟导入规避）。
+    Step 2: 若被依赖的是纯类型或纯函数，下沉到 core.foundation；若属于领域能力，移到 core 内更合适的子包。
+```
+
+The gate entry point is `scripts/check_rules.py`, reusable in any CI (`0` pass / `1` violations / `2` config error, `--format json` for machines). This repository gates its own layering direction and per-file line ceiling via `.github/gate-rules.yaml`.
+
 
 Daily continuity view is now available through `mc_admin(action="continuity")`, which aggregates focus task, resume packet, next actions, unresolved items, receipts, handoffs and evidence.
 

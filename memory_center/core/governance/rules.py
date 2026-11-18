@@ -409,28 +409,44 @@ def validate_rule_item(item: dict[str, Any]) -> list[str]:
     return problems
 
 
+def load_rules_from_yaml(path: Path) -> list[Rule]:
+    """Load and validate one rules YAML file (top-level ``rules:`` list).
+
+    校验不通过时抛 ``ValueError``，正文包含问题清单与下一步动作——规则定义错误
+    必须在加载期暴露，而不是等到违规时才表现为"规则没生效"。
+    """
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    items = data.get("rules", [])
+    if not isinstance(items, list):
+        raise ValueError(f"{path.name} 的 rules 必须是列表，实际为 {type(items).__name__}")
+    rules: list[Rule] = []
+    for item in items:
+        if not isinstance(item, dict):
+            raise ValueError(f"{path.name} 中每条规则必须是对象，实际为 {type(item).__name__}")
+        problems = validate_rule_item(item)
+        if problems:
+            rule_id = str(item.get("id") or "<未命名>")
+            guidance = (
+                "Step 1: 确认该规则是否真的需要硬性拦截；只需提示就把 enforcement 设为 advisory。\n"
+                "Step 2: 需要拦截则补 check（kind 见 core.governance.rule_checks.CHECK_KINDS）"
+                "与按序的 repair_steps，再重新加载。"
+            )
+            raise ValueError(
+                f"规则 {rule_id} 定义非法（{path.name}）：\n  - "
+                + "\n  - ".join(problems)
+                + f"\n{guidance}"
+            )
+        normalized = dict(item)
+        normalized["repair_steps"] = normalize_repair_steps(item.get("repair_steps"))
+        rules.append(Rule(**normalized))
+    return rules
+
+
 def load_rules(store: WorkspaceStore) -> list[Rule]:
     ensure_default_rules(store)
     rules: list[Rule] = []
-    for path in store.rules_dir.glob("*.yaml"):
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        for item in data.get("rules", []):
-            problems = validate_rule_item(item)
-            if problems:
-                rule_id = str(item.get("id") or "<未命名>")
-                guidance = (
-                    "Step 1: 确认该规则是否真的需要硬性拦截；只需提示就把 enforcement 设为 advisory。\n"
-                    "Step 2: 需要拦截则补 check（kind 见 core.governance.rule_checks.CHECK_KINDS）"
-                    "与按序的 repair_steps，再重新加载。"
-                )
-                raise ValueError(
-                    f"规则 {rule_id} 定义非法（{path.name}）：\n  - "
-                    + "\n  - ".join(problems)
-                    + f"\n{guidance}"
-                )
-            normalized = dict(item)
-            normalized["repair_steps"] = normalize_repair_steps(item.get("repair_steps"))
-            rules.append(Rule(**normalized))
+    for path in sorted(store.rules_dir.glob("*.yaml")):
+        rules.extend(load_rules_from_yaml(path))
     return rules
 
 
