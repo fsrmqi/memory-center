@@ -1,6 +1,6 @@
 # 5.0 知识流水线、向量化与存储参考方案
 
-> **类型 / Type**：设计建议（decision）。**适用版本 / Version**：5.0.0b29。
+> **类型 / Type**：设计建议（decision）。**适用版本 / Version**：5.0.0b30。
 > 本文描述知识库与向量检索的目标形态与存储职责划分；当前入口与已发布能力见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。
 
 ## 架构参考

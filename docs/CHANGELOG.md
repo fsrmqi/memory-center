@@ -1,6 +1,6 @@
 # Changelog / 更新日志
 
-## 未发布 / Unreleased
+## 5.0.0b30 — 规则可执行判据与分层门禁 / Executable rule checks and layering gate
 
 ### 新增 / Added
 
@@ -10,18 +10,29 @@
 - 上下文包组装（`core/context/pack.py`）优先使用 `repair_steps` 而非并列 `checklist`——有序步骤比无序检查项更能直接驱动 Agent 行动。
 - YAML 中 `- Step 1: 说明` 会被解析为单键映射，加载时自动拍平为字符串，作者无需给每行加引号。
 
+### 变更 / Changed
+
+- **分层反向依赖清零**：`core` 不再依赖 `application`／`platform`／`service`，`foundation` 不再依赖其它 core 子包。`safe_reason` 下沉到新增的 `core/foundation/redaction.py`（`observability.diagnostics` 保留同名再导出）；`served_ledger` 迁至 `core/storage/`；服务类型注册表下沉到 `core/foundation/service_kinds.py`，`core/workspace/kinds.py` 只保留需要读构建文件的探测；`WikiError` 下沉到 `core/knowledge/wiki_errors.py`；`confirm_wiki_promotion` 上移到 `application/wiki_promotion.py`，core 只保留只读 preview。
+- 新增回归 `tests/regression/test_architecture_seams.py::test_layer_dependency_contract`：递归扫描全部模块，区分模块级／函数内延迟／`TYPE_CHECKING` 三种导入形态，基线只允许收缩，失败时输出修复步骤。当前基线为空。
+- 规则违规结果对既有消费方向后兼容：新增字段只做增量，`match_rules` 输出结构不变（新增可选键），MCP 工具 schema 与命令参数均无破坏性变更。
+
+### 修复 / Fixed
+
+- `test_audit_fix_writes_agent_mcp_bindings` 仍断言 4.x 的 stdio `args=["--workspace", ...]`；5.0 起宿主绑定为 Streamable HTTP，断言改为 `type=="http"` 且 `url` 以 `/mcp` 结尾。
+- 补 `memory_center/core/profiles/README.md`，满足「每个 core 子目录都有模块说明」的既有断言。
+
 ### 文档 / Docs
 
 - README 增加「规则的可执行判据」中英双语小节、YAML 示例与门禁脚本用法。
-
-### 变更 / Changed
-
-- 规则违规结果对既有消费方向后兼容：新增字段只做增量，`match_rules` 输出结构不变（新增可选键），MCP 工具 schema 与命令参数均无破坏性变更。
 
 ### 已知边界 / Known limits
 
 - 门禁只走 CI / 脚本入口，尚未接入 MCP 工具或宿主 hook：`mc_*` 工具面不提供规则评估，`pre_edit` 类实时拦截未恢复（5.0 主树已无 `memory_center/hooks/`）。
 - 行数天花板 2600 是防继续膨胀的上限，不是质量目标（当前最大文件约 2473 行，`core/tasks/artifacts.py`）；函数参数上限暂未纳入本仓库门禁（现有最大为 `build_admin_registry` 的 49 个 `**kwargs` 透传）。
+
+### 版本同步 / Version sync
+
+- 包、前端、Compose 与当前版本文档同步至 5.0.0b30。
 
 ## 5.0.0b29 — MCP 握手版本修正 / Correct MCP handshake version
 
