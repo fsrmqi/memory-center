@@ -422,7 +422,7 @@ Memory Center 不把模型临时输出直接当成长期知识。写入链路会
 ├── artifacts/              # shared/task Markdown artifacts and L3 blocks
 ├── rules/                  # matching/eval/handoff/write-policy rules
 ├── instructions/           # generated agent instructions
-├── hooks.yaml              # host hook config
+├── hooks.yaml              # 4.x hook 配置；5.0 仅由运行时审计读取，不执行
 ├── store.lock              # file-level write lock
 └── reindex.lock            # full reindex writer lock
 ```
@@ -872,13 +872,9 @@ L2 task spaces 还提供恢复体验相关操作：健康检查、修复计划�
 
 `presentation/evidence_subgraph.py` 是显式导出路径：先以 node id 或受限 symbol 查询定位一个根节点，再执行最多 3 跳、120 条边、80 个节点的邻接遍历。输出只包含节点标识、service、文件路径、边类型、置信度和证据等级，可渲染为 JSON、Markdown 或 HTML；不读取源码、原始工具载荷或全图，因此不会增加普通查询的延迟与数据暴露面。
 
-Hook 层在 `memory_center/hooks/`，属于宿主集成，不是核心业务层。默认建议：
+5.0 已移除 hook 执行器（原 `memory_center/hooks/`）。`.memory-center/hooks.yaml` 降级为声明式配置，只被 `core/audit/hook_config.py` 读取并校验格式，不再触发任何调用，也不存在 `run-hook` / `generate-hooks` 子命令。宿主接入改由 MCP 绑定承担：`core/governance/instructions.py` 的 `write_agent_instructions()` 写入受管协议块，`repair_agent_mcp_bindings()` 补齐 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json` 与 DSH 的 `cordis.patch.yml`，统一指向 Streamable HTTP 端点；stdio 代理 `memory-center-mcp` 不接收 `--workspace`，只读 `MEMORY_CENTER_URL` 与 `MEMORY_CENTER_TOKEN`。
 
-- `SessionStart -> mc_start`
-- `PreToolUse(Edit|Write) -> mc_analyze`
-- `Stop -> mc_close`
-
-`UserPromptSubmit` 默认配置为 `enabled: true` + `record_only: true`：只把脱敏 prompt 交互写入交互历史，不注入提示、不阻塞输入；宿主 adapter 也不会为它生成阻断或注入型配置。它容易打断普通自然语言输入，因此注入/拦截行为被有意排除。Claude Code、Codex、Cursor adapter 分别生成适配各宿主的 hook/规则文件。
+这条移除是有代价的：4.x 的 `pre_edit` 实时阻断在 5.0 没有等价能力。需要硬性拦截时走 CI（`scripts/check_rules.py`）或架构契约测试，而不是期待宿主在编辑前被拦住。反之，`SessionStart -> mc_start`、`PreToolUse(Edit|Write) -> mc_analyze`、`Stop -> mc_close` 这类生命周期编排也需由宿主侧自行接，Memory Center 只提供 `mc_*` 工具。
 
 ### Context Ownership Boundary / 上下文所有权边界
 
@@ -1147,6 +1143,8 @@ Memory Center 是一个面向 AI 编程助手的本地优先 workspace 记忆与
 ## 附录 G：常见设计误解
 
 以下行为容易被误解为 bug，但其实是有意的设计取舍。
+
+> **阅读提示**：G.3、G.4、G.6 描述的是 4.x `hooks.yaml` 的字段语义。5.0 已移除 hook 执行器，这三条只解释这些字段为何保留，不再代表运行时的实际行为；要判断当前系统做什么，以第 11 节的 MCP 绑定说明为准。
 
 **G.1 测试必须隔离 workspace**：`examples/spring-cloud-demo/.memory-center` 适合作为 demo 和 fixture 来源，但不适合作为测试写入目标。新增测试必须复制 demo 到 `tmp_path` 后操作，避免 `git status` 变脏和测试间互相污染。
 

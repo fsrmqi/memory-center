@@ -1,5 +1,29 @@
 # Changelog / 更新日志
 
+## 未发布 / Unreleased
+
+### 修复 / Fixed
+
+- **运行时诊断不再推荐已移除的命令**：`_recommended_actions()` 原先建议 `setup-agent`、`generate-hooks --host codex`、`runtime-audit --fix`、`reindex --workspace`，而这些子命令在 5.0 已全部移除（`memory-center` 现在只启动服务，无任何子命令）。改为给出 5.0 可执行的替代：`mc_admin(action="runtime_audit", force=true)` 补齐 MCP 绑定、管理页重试失败作业。
+- **`codex_missing_scripts` 不再触发待修建议**：5.0 不存在生成 `.codex-hooks/*.sh` 的链路，该字段永远无法满足，若参与判断会让每个带 `hooks.yaml` 的 workspace 长期显示一条无解建议。触发条件收窄为 `config_valid=False`（真正的格式错误），字段本身仍如实报告。
+- `core/audit/runtime.py` 的 `agent_mcp_repair` 候选建议由 `runtime-audit --fix` 改为 `mc_admin(action="runtime_audit", force=true)`。
+
+### 文档 / Docs
+
+- README「宿主接入」段重写：删除 `memory_center/hooks/` 与 `run-hook` / `generate-hooks` 的用法描述，说明 hook 执行器已在 5.0 移除、`hooks.yaml` 降级为审计读取的声明式配置；补上真实的绑定写入入口与 stdio 代理的环境变量约定。
+- `docs/ARCHITECTURE.md`：workspace 树中 `hooks.yaml` 注释更正为"4.x hook 配置，5.0 仅审计读取"；第 11 节由"Hook 层在 `memory_center/hooks/`"改写为移除后的 MCP 绑定事实，并写明 `pre_edit` 实时阻断在 5.0 没有等价能力；附录 G 增加阅读提示，说明 G.3/G.4/G.6 仅解释 `hooks.yaml` 字段保留原因。
+- `docs/USER_GUIDE.md`：`memory-center-mcp --workspace ...` 更正为环境变量用法（该代理不接收任何命令行参数），并把 `setup-agent` / `runtime-audit --fix` 的说明替换为 `mc_admin(action="runtime_audit", force=true)`。
+- `docs/REFERENCE.md`：6.2 补全 `Rule` 必填/可选字段与 `enforcement`/`check`/`repair_steps`；更正 `severity` 的表述（自由字符串、无枚举校验，内置规则用 `must`）；6.3 说明 `hooks.yaml` 在 5.0 不再执行。
+
+### 测试 / Tests
+
+- `tests/entrypoints/test_runtime_inspect.py`：原 `test_runtime_inspect_reports_missing_hook_scripts` 断言必须出现 `generate-hooks --host codex` 建议，改为断言不再出现已移除命令，并新增非法 `hooks.yaml` 仍给出可执行建议的用例。
+
+### 已知边界 / Known limits
+
+- `docs/USER_GUIDE.md` 仍有约 60 处 `memory-center <subcommand>` 形式的命令示例（`init`、`reindex`、`query`、`work-start` 等），均为 4.x CLI；5.0 已无 CLI 分发器，这些示例需整体改写为 HTTP / MCP 路线，属独立一轮返工。
+- `core/foundation/capabilities.py` 仍声明 14 条 `_cli(...)` 入口（`change-review`、`runtime-audit`、`workflow-profile` 等），均指向不存在的命令。是否保留 `cli` 这一类入口需先定契约，再同步 `all_cli_commands()` 与对应测试。
+
 ## 5.0.0b30 — 规则可执行判据与分层门禁 / Executable rule checks and layering gate
 
 ### 新增 / Added

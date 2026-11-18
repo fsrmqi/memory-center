@@ -260,20 +260,20 @@ MCP 使用 `mc_analyze` 时，参数边界为：`depth=quick|standard|full`、`d
 The default install includes MCP runtime dependencies, so `memory-center-mcp` should work immediately after install.
 
 ```bash
-memory-center-mcp --workspace /abs/path/.memory-center/workspace.yaml
+MEMORY_CENTER_URL=http://127.0.0.1:8765/mcp memory-center-mcp
 ```
 
-`init` / `reindex` 会把 MCP 绑定写到聚合根目录和每个 service 子目录的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`。如果 service 子目录里看不到 `mc_*` 工具，优先运行：
+stdio 代理不接收 `--workspace`：它只是把 stdio 转发到常驻服务，连接目标由 `MEMORY_CENTER_URL` 决定，凭据由 `MEMORY_CENTER_TOKEN` 决定。因此一个代理进程可以服务任意 workspace，workspace 归属由 `mc_*` 调用里的参数或服务端会话决定。
 
-`init` / `reindex` writes MCP bindings to the aggregate root and each service root under `.codex/mcp.json`, `.cursor/mcp.json`, and `.mcp.json`. If a service sub-directory does not expose `mc_*` tools, prefer:
+The stdio proxy takes no `--workspace`: it forwards stdio to the resident service. The endpoint comes from `MEMORY_CENTER_URL` and credentials from `MEMORY_CENTER_TOKEN`, so one proxy process can serve any workspace.
 
-```bash
-memory-center setup-agent --workspace /abs/path/.memory-center/workspace.yaml
-```
+MCP 绑定由 `core/governance/instructions.py` 写入：`write_agent_instructions()` 落受管协议块，`repair_agent_mcp_bindings()` 补齐聚合根与每个 service 子目录的 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`，装有 DSH 时还覆盖各 profile 的 `cordis.patch.yml`。5.0 没有对应的 CLI 子命令，触发方式是管理端 `mc_admin(action="runtime_audit", force=true)`：`force=true` 才写入，省略则只做诊断并返回 `missing_or_stale` 清单。
 
-`setup-agent` 会刷新说明、Hooks、MCP 绑定并输出是否需要重启宿主会话；需要只做诊断时可用 `memory-center runtime-audit --workspace ...`。装有 DSH 时，绑定检查还覆盖每个 profile 的 `cordis.patch.yml`：条目是否缺失、`command` 是否真实可执行、`--workspace` 是否指向当前 workspace、patch 层是否仍是合法 YAML；`--fix` 只就地替换或追加该条目。
+MCP bindings are written by `core/governance/instructions.py`: `write_agent_instructions()` drops the managed protocol block, and `repair_agent_mcp_bindings()` fills in `.codex/mcp.json`, `.cursor/mcp.json` and `.mcp.json` for the aggregate root and every service root (plus each DSH profile's `cordis.patch.yml` when DSH is installed). 5.0 exposes no CLI subcommand for this; call `mc_admin(action="runtime_audit", force=true)` — omit `force` to get a diagnostics-only report with a `missing_or_stale` list.
 
-`setup-agent` refreshes instructions, hooks, MCP bindings, and reports whether the host session should be restarted. Use `memory-center runtime-audit --workspace ...` when you only need diagnostics. With DSH installed the binding check also covers each profile's `cordis.patch.yml`: whether the entry is missing, whether its `command` is actually executable, whether `--workspace` targets the current workspace, and whether the patch layer is still valid YAML; `--fix` only replaces or appends that entry.
+服务子目录里看不到 `mc_*` 工具时，先跑一次 `mc_admin(action="runtime_audit", force=true)` 补齐绑定，再重启宿主会话。注意 4.x 的 `setup-agent`、`runtime-audit --fix`、`generate-hooks` 在 5.0 均已移除，`hooks.yaml` 只被审计读取、不执行任何 hook。
+
+If a service sub-directory does not expose `mc_*` tools, run `mc_admin(action="runtime_audit", force=true)` to repair bindings, then restart the host session. The 4.x `setup-agent`, `runtime-audit --fix` and `generate-hooks` commands are gone in 5.0; `hooks.yaml` is read by the audit and never executed.
 
 如果 Agent 首轮没有看到 `mc_*`，先把状态视为“装载中或未知”：执行延迟工具发现，并用 `mc_freshness` 做轻量验证。Codex 中可运行 `codex mcp get memory-center`；若显示 `enabled: true`，但当前会话仍无工具，应刷新或新建会话，不要误报“Memory Center 未加载”。只有绑定缺失、命令不存在或 MCP 调用明确失败时才执行降级流程。
 

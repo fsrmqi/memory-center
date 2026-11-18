@@ -866,8 +866,8 @@ Since 5.0 the MCP endpoint is the always-on service itself at `http://127.0.0.1:
 { "mcpServers": { "memory-center": { "type": "http", "url": "http://127.0.0.1:8765/mcp" } } }
 ```
 
-只支持 stdio 的宿主仍可用无状态代理 `memory-center-mcp`（转发到 `MEMORY_CENTER_URL`，不接受旧 `--workspace`）。`runtime-audit --fix` 与 `setup-agent` 生成的也是这套 5.0 绑定。
-Stdio-only hosts can still use the stateless `memory-center-mcp` adapter, which forwards to `MEMORY_CENTER_URL` and no longer accepts the legacy `--workspace` flag. `runtime-audit --fix` and `setup-agent` now generate exactly this 5.0 binding set.
+只支持 stdio 的宿主仍可用无状态代理 `memory-center-mcp`（转发到 `MEMORY_CENTER_URL`，不接受旧 `--workspace`）。这套 5.0 绑定由 `mc_admin(action="runtime_audit", force=true)` 写入；4.x 的 `runtime-audit --fix` 与 `setup-agent` 已移除。
+Stdio-only hosts can still use the stateless `memory-center-mcp` adapter, which forwards to `MEMORY_CENTER_URL` and no longer accepts the legacy `--workspace` flag. These 5.0 bindings are written by `mc_admin(action="runtime_audit", force=true)`; the 4.x `runtime-audit --fix` and `setup-agent` commands are gone.
 
 当前暴露 17 个工具，签名以服务实际返回的 `tools/list` 为准：`mc_service_status`、`mc_workspaces`、`mc_lookup`、`mc_analyze`、`mc_start`、`mc_resume`、`mc_close`、`mc_ref`、`mc_memory_write`、`mc_wiki_write`、`mc_index`、`mc_job_status`、`mc_job_cancel`、`assistant_admin`、`assistant_knowledge`、`assistant_memory`、`assistant_skill`。逐项说明见 [MCP 接入指南](docs/MCP_GUIDE.md)。
 
@@ -1131,46 +1131,31 @@ The equivalent MCP admin actions are `mc_admin(action="walkthrough_health")`, `m
 >
 > **注意**：CLI 和 HTTP 仍保留所有细粒度原子命令。只有 MCP 工具面使用 facade 工具。路由与命令参考见 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md) 和 [docs/REFERENCE.md](./docs/REFERENCE.md)。
 
-**Hook host integration** / **宿主集成层**（`memory_center/hooks/`）：
+**Host integration** / **宿主接入**：
 
-Hook 是宿主集成方案，不是 Memory Center 核心能力。它定义宿主（Claude Code / Codex / Cursor）在什么生命周期点自动触发哪些 facade 调用。
+5.0 移除了 hook 执行器（原 `memory_center/hooks/`）与 `run-hook`、`generate-hooks`、`setup-agent`、`runtime-audit` 等子命令。`.memory-center/hooks.yaml` 仅作为运行时审计读取的声明式配置，不再自动触发任何调用。宿主接入以 MCP 绑定为主：受管项目根会写入 `.codex/mcp.json`、`.cursor/mcp.json`、`.mcp.json`，统一指向 Streamable HTTP 端点 `http://127.0.0.1:8765/mcp`；stdio 代理为 `memory-center-mcp`，不带旧 `--workspace` 参数。
 
-| Hook 事件 | Facade | 模式 | 说明 |
-|-----------|--------|------|------|
-| `session_start` | `mc_start` | soft | 不阻塞，注入上下文 |
-| `pre_edit` | `mc_analyze` | guard | must-severity 规则匹配时阻塞编辑 |
-| `session_stop` | `mc_close` | soft | 不阻塞，关闭并同步 |
-| `user_prompt_submit` | `mc_start` | suggest + record_only | 默认只记录脱敏交互，不注入提示、不阻塞 |
+5.0 removed the hook runner (former `memory_center/hooks/`) along with the `run-hook`, `generate-hooks`, `setup-agent` and `runtime-audit` subcommands. `.memory-center/hooks.yaml` is now only a declarative config read by the runtime audit and never triggers a call. Host integration is MCP-binding based: each managed project root gets `.codex/mcp.json`, `.cursor/mcp.json` and `.mcp.json`, all pointing at the Streamable HTTP endpoint `http://127.0.0.1:8765/mcp`; the stdio proxy is `memory-center-mcp`, without the old `--workspace` argument.
 
-模式说明：soft（不阻塞），guard（风险规则匹配时阻塞，exit 2），suggest（只注入提示），off（禁用）。`user_prompt_submit` 默认 `record_only: true`，宿主 adapter 只生成记录型配置；需要注入提示必须由维护者显式修改 `hooks.yaml`。
+受管协议块与上述绑定由 `core/governance/instructions.py` 写入：`write_agent_instructions()` 落协议块，`repair_agent_mcp_bindings()` 补齐各宿主配置并镜像到已配置 service 子目录根（如 `service-a/AGENTS.md`、`service-a/.codex/mcp.json`）。5.0 没有对应的 CLI 子命令，触发入口是 `mc_admin(action="runtime_audit", force=true)`。
 
-配置文件：每 workspace 的 `.memory-center/hooks.yaml`（声明式，不同 workspace 可有不同策略）。
+The managed protocol block and bindings are written by `core/governance/instructions.py`: `write_agent_instructions()` drops the protocol block and `repair_agent_mcp_bindings()` fills in each host config, mirrored into every configured service root (for example `service-a/AGENTS.md` and `service-a/.codex/mcp.json`). 5.0 exposes no CLI subcommand for this; the entry point is `mc_admin(action="runtime_audit", force=true)`.
 
-CLI 命令：
-```bash
-memory-center run-hook --workspace <workspace.yaml> --hook session_start  # 执行 hook
-memory-center generate-hooks --workspace <workspace.yaml> --host claude-code  # 生成宿主配置
-```
+需要 4.x 的 `pre_edit` 实时阻断语义时注意：5.0 没有等价能力。门禁请走 CI（`scripts/check_rules.py`，见上文「规则的可执行判据」）或架构契约测试。
 
-从当前版本开始，`init` / `reindex` 写入的受管说明块和 MCP 绑定不只落在聚合 workspace 根目录，也会镜像到各个已配置的 service 子目录根（如 `service-a/AGENTS.md`、`service-a/.codex/mcp.json`、`service-a/.cursor/mcp.json`、`service-a/.mcp.json`）。这样当你直接在 service 子目录里打开 Codex / Claude / Cursor 时，Agent 能复用上层 `.memory-center/workspace.yaml` 并拿到 `mc_*` 工具。
+If you need the 4.x `pre_edit` blocking semantics, note that 5.0 has no equivalent: gate in CI via `scripts/check_rules.py` (see "Executable rule checks" above) or the architecture contract test.
 
-Starting from this version, the managed instruction block and MCP bindings written by `init` / `reindex` are mirrored not only to the aggregate workspace root but also to each configured service root (for example `service-a/AGENTS.md`, `service-a/.codex/mcp.json`, `service-a/.cursor/mcp.json`, and `service-a/.mcp.json`). This helps agents launched inside a service sub-directory reuse the parent `.memory-center/workspace.yaml` and receive the `mc_*` tools.
-
-如果 service 子目录里仍看不到 `mc_*` 工具，优先运行一键接入命令：
+安装宿主 Wiki Skill 并打印 MCP 配置模板（这是 5.0 唯一保留的宿主集成命令，不做绑定修复）：
 
 ```bash
-memory-center setup-agent --workspace <workspace.yaml>
+memory-center-integrations --target codex --target claude
 ```
 
-If a service sub-directory still does not expose `mc_*` tools, prefer the one-step setup command:
+Install the host Wiki Skill and print the MCP config template (the only remaining host-integration command in 5.0; it does not repair bindings).
 
-```bash
-memory-center setup-agent --workspace <workspace.yaml>
-```
+诊断与绑定修复不再走 CLI：调用 `mc_admin(action="runtime_audit")` 只读诊断并返回 `missing_or_stale` 清单，`mc_admin(action="runtime_audit", force=true)` 才真正写入绑定。索引异常按报告里的建议处理——在管理页重试失败作业，或重新保存项目设置触发重建。
 
-该命令会刷新说明、Hooks、MCP 绑定并返回是否需要重启宿主会话；`runtime-audit --fix` 仍可作为底层诊断修复入口。在装有 DSH 的机器上，它同时检查并修复每个 DSH profile 的 `cordis.patch.yml` 绑定。
-
-This command refreshes instructions, hooks, MCP bindings, and reports whether the host session should be restarted; `runtime-audit --fix` remains available as the lower-level diagnostic repair entrypoint. On machines with DSH installed it also inspects and repairs each DSH profile's `cordis.patch.yml` binding.
+Diagnostics and binding repair no longer go through the CLI: `mc_admin(action="runtime_audit")` produces a read-only report with a `missing_or_stale` list, and `mc_admin(action="runtime_audit", force=true)` actually writes the bindings. For index failures, follow what the report suggests — retry the failed job from the admin page, or re-save the project settings to trigger a rebuild.
 
 详见 [docs/MCP_GUIDE.md](./docs/MCP_GUIDE.md)。
 

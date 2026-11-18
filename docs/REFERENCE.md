@@ -704,11 +704,11 @@ Replay 检查会进一步把每条建议分类为 `adopted`、`missed`、`bypass
 
 ### 6.2 rules
 
-规则文件位于 `.memory-center/rules/`。高频规则：`global-rules.yaml`、`auto-sync-rules.yaml`、`resume-rules.yaml`、`handoff-rules.yaml`、`write-policy-rules.yaml`、`eval-rules.yaml`。规则应至少包含 `id`、`title`、`severity`、`when`、`message`。
+规则文件位于 `.memory-center/rules/`。高频规则：`global-rules.yaml`、`auto-sync-rules.yaml`、`resume-rules.yaml`、`handoff-rules.yaml`、`write-policy-rules.yaml`、`eval-rules.yaml`。`global-rules.yaml` 中每条规则必填 `id`、`title`、`scope`、`severity`、`rule`（对应 `Rule` 数据类的无默认值字段）；可选 `reason`、`file_patterns`、`trigger_keywords`、`checklist`。`severity` 目前是自由字符串，不做枚举校验，内置规则用 `must`，评估类发现用 `critical`/`warning`。需要硬性拦截时追加 `enforcement: gate`、可机检的 `check` 与按序 `repair_steps`（详见 README「规则的可执行判据」）。
 
 ### 6.3 hooks.yaml
 
-支持事件：`session_start`、`pre_edit`、`session_stop`、`user_prompt_submit`。支持 mode：`soft`、`guard`、`suggest`、`off`。默认配置：`session_start: soft`、`pre_edit: guard`、`session_stop: soft`、`user_prompt_submit: suggest + enabled: true + record_only: true`（只记录脱敏交互，不注入提示、不阻塞输入）。
+5.0 已移除 hook 执行器：`hooks.yaml` 仍会被运行时审计读取并校验格式，但不会触发任何调用。字段保持 4.x 形态——事件 `session_start`、`pre_edit`、`session_stop`、`user_prompt_submit`，模式 `soft`、`guard`、`suggest`、`off`——仅作历史配置兼容；`pre_edit` 的实时阻断在 5.0 没有等价能力，门禁请走 CI（`scripts/check_rules.py`）。
 
 ### 6.4 Memory Layout / 记忆目录
 

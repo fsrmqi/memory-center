@@ -47,8 +47,8 @@ def isolated_dsh_home(tmp_path_factory, monkeypatch):
 
     MCP binding repair also covers DSH profile patch layers under ``$DSH_HOME``
     (default ``~/.dsh``). Tests run against throwaway workspaces, so without
-    this isolation a ``runtime-audit --fix`` test would rewrite the developer's
-    real DSH profiles with a pytest temp path.
+    this isolation a forced ``mc_admin(action="runtime_audit", force=true)``
+    test would rewrite the developer's real DSH profiles with a pytest temp path.
     """
     monkeypatch.setenv("DSH_HOME", str(tmp_path_factory.mktemp("dsh-home")))
 

@@ -247,7 +247,7 @@ def _build_runtime_audit_candidate_paths(
                 "status": "confirmed",
                 "weight": 0.92,
                 "why": "当前 agent 实际读取的 MCP 配置缺失或未指向本 workspace，子项目里会看不到 mc_* 工具。",
-                "next_action": "运行 `memory-center runtime-audit --workspace <workspace.yaml> --fix` 自动补齐根目录和子项目 MCP 绑定",
+                "next_action": "调用 mc_admin(action=\"runtime_audit\", force=true) 补齐根目录与子项目的 MCP 绑定",
                 "verification_cost": "low",
                 "_learning_aliases": [
                     {"candidate_type": "runtime_governance", "target": "hooks-mcp-agent-profile"},

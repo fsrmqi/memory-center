@@ -237,15 +237,20 @@ def _recommended_actions(
     if not mcp["available"]:
         actions.append("确认 memory-center-mcp 已安装且在宿主 PATH 中。")
     if not instructions["agents_md_present"]:
-        actions.append("运行 memory-center setup-agent 生成 AGENTS 与 MCP 绑定。")
-    if not hooks["config_valid"] or hooks["codex_missing_scripts"]:
-        actions.append("运行 memory-center generate-hooks --host codex 刷新 Codex Hook 脚本。")
+        actions.append(
+            "项目根缺少 AGENTS.md：按 docs/MCP_GUIDE.md §1 的接入示例放置受管协议块；"
+            "5.0 没有自动写入它的 CLI 子命令。"
+        )
+    if not hooks["config_valid"]:
+        actions.append(
+            "hooks.yaml 格式不合法且 5.0 不会执行任何 hook：修正格式，或直接删除该文件停止审计校验。"
+        )
     if not bindings["thread_session_bound"]:
         actions.append("新任务先调用 mc_start；跨进程续接时设置 MEMORY_CENTER_THREAD_ID。")
     if index["generation_status"] != "ready" or index["reindex_status"] in {"failed", "interrupted"}:
-        actions.append("运行 memory-center reindex --workspace <workspace.yaml> 恢复可用索引。")
+        actions.append("在管理页对该项目的失败作业点重试（POST /api/v1/jobs/{job_id}/retry）；仍失败则重新保存项目设置以触发重建。")
     if audit.get("quality") == "low":
-        actions.append("运行 memory-center runtime-audit --workspace <workspace.yaml> --fix 修复宿主绑定。")
+        actions.append("按 findings 与 diagnostics 修复后重新运行诊断；宿主接入模板可由 memory-center-integrations 输出。")
     return actions[:8]
 
 
