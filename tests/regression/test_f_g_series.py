@@ -499,7 +499,11 @@ class TestG04AgentRuntimeAudit:
         assert result["mcp_bindings"]["ok"] is True
         service_config = demo_workspace.parent.parent / "task-service" / ".codex" / "mcp.json"
         data = json.loads(service_config.read_text(encoding="utf-8"))
-        assert data["mcpServers"]["memory-center"]["args"] == ["--workspace", str(demo_workspace.resolve())]
+        # 5.0 起宿主绑定是 Streamable HTTP（直连常驻服务）；4.x 的 stdio
+        # `memory-center-mcp --workspace <file>` 已退役，因此不再写 args。
+        entry = data["mcpServers"]["memory-center"]
+        assert entry["type"] == "http"
+        assert entry["url"].endswith("/mcp")
 
     @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
     def test_runtime_audit_cli_fix_writes_bindings(self, demo_workspace: Path):
