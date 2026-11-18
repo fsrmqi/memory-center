@@ -173,20 +173,7 @@ _FOUNDATION_REMEDY = (
 # 已存在的违规基线。键为 (相对仓库根的路径, 被导入的目标模块)。
 # 该列表只允许收缩，不允许增长：修好一处即从基线移除，基线里残留的条目会让测试失败，
 # 以免技术债条目变成永久豁免。
-_KNOWN_LAYER_VIOLATIONS: dict[tuple[str, str], str] = {
-    (
-        "memory_center/core/foundation/models.py",
-        "memory_center.core.workspace.kinds",
-    ): "ServiceConfig.resolved_language 在函数内延迟导入 resolve_kind 规避循环，属 ADR-0001 禁止的做法。",
-    (
-        "memory_center/core/knowledge/wiki_promotion.py",
-        "memory_center.platform.assistant.core",
-    ): "为取 WikiError 在函数内延迟导入 platform，反向依赖入口侧控制面。",
-    (
-        "memory_center/core/knowledge/wiki_promotion.py",
-        "memory_center.application.task_shadow_flow",
-    ): "晋升编排依赖 application 的任务绑定决策，应把确认编排上移到 application 层。",
-}
+_KNOWN_LAYER_VIOLATIONS: dict[tuple[str, str], str] = {}
 
 
 def _module_layer(module: str) -> tuple[str, str] | None:

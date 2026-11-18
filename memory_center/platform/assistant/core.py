@@ -31,6 +31,7 @@ from itertools import islice
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.knowledge.wiki_errors import WikiError  # noqa: F401  (re-export)
 from memory_center.core.profiles import active_profile
 from memory_center.platform.assistant import indexer
 
@@ -78,10 +79,6 @@ DOCUMENT_STATUSES = {"草稿", "生效", "归档", "待确认"}
 
 _INDEX_NAME = "索引.md"
 _AUTO_INDEX_LOCK = threading.Lock()
-
-
-class WikiError(Exception):
-    """wiki 操作业务异常（会原样透传给 MCP 客户端）。"""
 
 
 def _resolve(root: Path) -> Path:

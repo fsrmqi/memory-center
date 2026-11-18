@@ -14,3 +14,4 @@
 - `admin.py`、`groups.py`、`quality_gates.py`：管理、工作区组和质量门禁用例。
 - `golden.py`、`release_gate.py`：基准执行和发布门禁。
 - `presentation.py`：可导出 Markdown、HTML、Mermaid 的展示组装。
+- `wiki_promotion.py`：Wiki 晋升的确认编排（执行 bridge 子进程、读取会话不可变决策、登记 KnowledgeLink 与事件）；只读预览仍在 `core/knowledge/wiki_promotion.py`。

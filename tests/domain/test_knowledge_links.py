@@ -15,8 +15,13 @@ from pathlib import Path
 
 import pytest
 
-from memory_center.core.knowledge import wiki_promotion as promotion_module
-from memory_center.core.knowledge.assets import get_collaboration_asset, ingest_wiki_document_asset, register_collaboration_asset
+from memory_center.application import wiki_promotion as promotion_module
+from memory_center.application.wiki_promotion import confirm_wiki_promotion
+from memory_center.core.knowledge.assets import (
+    get_collaboration_asset,
+    ingest_wiki_document_asset,
+    register_collaboration_asset,
+)
 from memory_center.core.knowledge.candidates import MAX_CANDIDATES, wiki_knowledge_candidates
 from memory_center.core.knowledge.knowledge_events import read_knowledge_events
 from memory_center.core.knowledge.wiki_bridge import (
@@ -29,7 +34,7 @@ from memory_center.core.knowledge.wiki_bridge import (
     sync_personal_wiki_assets,
 )
 from memory_center.core.knowledge.wiki_drift import knowledge_link_drift, knowledge_link_metrics
-from memory_center.core.knowledge.wiki_promotion import confirm_wiki_promotion, wiki_promotion_preview
+from memory_center.core.knowledge.wiki_promotion import wiki_promotion_preview
 from memory_center.platform.assistant.core import WikiError
 from tests.fixtures import copy_demo_workspace
 

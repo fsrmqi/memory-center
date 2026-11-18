@@ -7,3 +7,5 @@
 - `assets.py`：本地协作资产、可见性、共享审批、Agent/角色绑定与有界装载。registry 使用原子替换和有效备份恢复；metadata 最大 16 KiB，双副本损坏时拒绝写入而不覆盖历史。活跃 CodeGraph 归属稳定系统主体，保证多 Agent 可重复同步。
 - `skill_generation.py`：从历史任务记忆生成有界 Agent Skill 草稿。
 - `assets.py`：登记用户提供的文档链接和代码证据，不复制正文到长期层。
+- `wiki_promotion.py`：只读的 Wiki 晋升预览与 bridge 参数组装；确认阶段的写编排在 `application/wiki_promotion.py`。
+- `wiki_errors.py`：跨层共用的 `WikiError` 契约，平台侧 `platform.assistant.core` 保留再导出。

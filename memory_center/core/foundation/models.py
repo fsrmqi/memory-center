@@ -4,13 +4,15 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from memory_center.core.foundation.service_kinds import resolve_kind
+
 
 @dataclass
 class ServiceConfig:
     name: str
     path: str
     # Default kept as ``spring-boot-service`` for backward compatibility with
-    # existing workspace.yaml files. See ``memory_center.core.workspace.kinds``
+    # existing workspace.yaml files. See ``memory_center.core.foundation.service_kinds``
     # for the full registry of supported kinds.
     type: str = "spring-boot-service"
     service_name: str | None = None
@@ -28,11 +30,6 @@ class ServiceConfig:
         """
         if self.language:
             return self.language
-        # Import locally to avoid a circular import: service_kinds is a
-        # pure module but lives in the same package and may grow helpers
-        # that import from models in the future.
-        from memory_center.core.workspace.kinds import resolve_kind
-
         return resolve_kind(self.type).language
 
 

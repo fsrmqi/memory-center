@@ -5,11 +5,14 @@
 - confirm 是唯一写 Wiki 的动作（显式人工确认）；任一 Wiki 写入失败即停止，不做补偿式写入；
 - 晋升成功后在 Memory Center 登记 KnowledgeLink（不复制正文），`binding_mode=shadow_only`
   的会话强制 workspace-scoped（不得创建 task-scoped 链接），并记录 promotion_confirmed 事件。
+
+归属：本模块只保留只读的 preview 与参数组装（纯 core 能力）。确认阶段的编排
+（执行 bridge 子进程、读取会话不可变决策、登记 KnowledgeLink 与事件）已上移到
+``memory_center.application.wiki_promotion``——它需要 application 的任务绑定决策，
+留在 core 会构成反向依赖（ADR-0001）。
 """
 from __future__ import annotations
 
-import json
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +22,7 @@ from memory_center.core.storage.workspace import WorkspaceStore
 SESSION_EVENTS_FILE = "session-events.jsonl"
 
 
-def _resolve_profile(
+def resolve_promotion_profile(
     workspace_file: str | Path,
     profile: Profile | str | Path | None,
 ) -> Profile:
@@ -58,7 +61,7 @@ def wiki_promotion_preview(
     if task_id:
         evidence_refs.append(f"task:{task_id}")
     content = summary[:1400]
-    prof = _resolve_profile(workspace_file, profile)
+    prof = resolve_promotion_profile(workspace_file, profile)
     return {
         "ready": True,
         "title": content.split("。", 1)[0][:100] or "DSH 交付经验",
@@ -87,7 +90,7 @@ def _clean_bridge_arg(value: Any, *, max_len: int = 1600) -> str:
     return cleaned
 
 
-def _build_promote_command(preview: dict[str, Any], wiki_root: str | Path) -> list[str]:
+def build_promote_command(preview: dict[str, Any], wiki_root: str | Path) -> list[str]:
     """组装 promote 子命令参数；所有会话内容先经 ``_clean_bridge_arg`` 清洗。
 
     返回纯参数列表供 ``subprocess.run(..., shell=False)`` 使用，不经 shell。
@@ -115,68 +118,9 @@ def _build_promote_command(preview: dict[str, Any], wiki_root: str | Path) -> li
     return args
 
 
-def confirm_wiki_promotion(
-    workspace_file: str | Path,
-    session_id: str,
-    *,
-    wiki_root: str | Path,
-    owner: str,
-    binding_mode: str = "",
-    profile: Profile | str | Path | None = None,
-) -> dict[str, Any]:
-    from memory_center.core.knowledge.knowledge_events import record_knowledge_event
-    from memory_center.core.knowledge.wiki_bridge import register_knowledge_link
-
-    preview = wiki_promotion_preview(workspace_file, session_id, wiki_root=wiki_root, profile=profile)
-    if not preview.get("ready"):
-        return preview
-    evidence_refs = [str(item).strip() for item in preview.get("evidence_refs", []) if str(item).strip()]
-    if not evidence_refs:
-        return {"ready": False, "reason": "evidence_refs_missing", "next_action": "无证据引用的 delivery candidate 不得晋升。"}
-    prof = _resolve_profile(workspace_file, profile)
-    scope = str(preview.get("module") or prof.default_scope or "").strip()
-    if not scope:
-        # 预览可以中立展示，但写入必须有归属范围；给出可操作的配置指引。
-        from memory_center.platform.assistant.core import WikiError
-
-        raise WikiError("未配置默认 scope：请先在 workspace profile 设置 default_scope（或携带 profile）再确认 Wiki 晋升。")
-    command = _build_promote_command(preview, wiki_root)
-    result = subprocess.run(command, check=True, capture_output=True, text=True, timeout=20, shell=False)
-    promoted = json.loads(result.stdout)
-    from memory_center.application.task_shadow_flow import session_task_binding
-
-    # CLI/plugin input is untrusted: only the immutable session decision may
-    # authorize a task-scoped KnowledgeLink.
-    decision = session_task_binding(workspace_file, session_id)
-    binding_mode = str(decision.get("mode", "shadow_only"))
-    task_id = str(decision.get("task_id", "") or "")
-    link = register_knowledge_link(
-        workspace_file,
-        relative_path=str(promoted.get("path", "")),
-        title=str(preview.get("title", "")),
-        owner=owner,
-        wiki_root=wiki_root,
-        scope=scope,
-        task_id=task_id,
-        binding_mode=str(binding_mode).strip(),
-        relation_reason=f"DSH 交付摘要经人工确认晋升（session {session_id}）。",
-        evidence_refs=evidence_refs,
-        actor=owner,
-    )
-    record_knowledge_event(
-        workspace_file,
-        event_type="promotion_confirmed",
-        payload={
-            "session_id": session_id,
-            "knowledge_id": link["knowledge_id"],
-            "task_id": task_id,
-            "path": str(promoted.get("path", ""))[:200],
-        },
-        actor=owner,
-    )
-    return {
-        "promoted": True,
-        "wiki": promoted,
-        "knowledge_link": link,
-        "next_action": "Wiki 已晋升并登记为 KnowledgeLink；漂移检测自动纳入该链接。",
-    }
+__all__ = [
+    "SESSION_EVENTS_FILE",
+    "resolve_promotion_profile",
+    "wiki_promotion_preview",
+    "build_promote_command",
+]
