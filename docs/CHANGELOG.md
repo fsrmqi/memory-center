@@ -1,6 +1,6 @@
 # Changelog / 更新日志
 
-## 未发布 / Unreleased
+## 5.0.0b32 — 5.0 入口注册表与 4.x 逐条映射 / Entry registry and 4.x migration map
 
 ### 变更 / Changed
 
@@ -19,6 +19,10 @@
 
 - 入口注册表的 HTTP 部分刻意只列「用户/宿主会直接调用」的 20 条路由，不复制 90 余条管理 API；完整路由以服务实际 OpenAPI 为准，避免清单变成第二份需同步维护的路由定义。测试保证所列每条都真实存在，但不保证穷尽。
 - MCP 工具集合用 `set(声明) == set(真实 tools/list)` 做完整校验；若将来新增工具，必须同步更新注册表、MCP_GUIDE 与 USER_GUIDE，否则测试失败。
+
+### 版本同步 / Version sync
+
+- 包、前端、Compose 与当前版本文档同步至 5.0.0b32；版本内容对应 `17581e6` 一个提交（5.0 入口注册表、能力矩阵收敛、USER_GUIDE 附录 A 与运行态真值测试）。历史 b31 条目按原文保留。
 
 ## 5.0.0b31 — 入口真值校正与文档边界 / Entry-point truthfulness and documentation boundaries
 

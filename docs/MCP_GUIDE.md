@@ -1,10 +1,10 @@
 # MCP Guide / MCP 接入指南（5.0）
 
-> 适用版本：**5.0.0b31**（开发测试版）。本文描述 5.0 的统一 MCP 合同：一个入口 `/mcp`、17 个工具。
+> 适用版本：**5.0.0b32**（开发测试版）。本文描述 5.0 的统一 MCP 合同：一个入口 `/mcp`、17 个工具。
 > 4.x 的 15 个 task-level tools、`mc_admin` 路由、`memory-center-mcp --workspace` 绑定均已退役，迁移对照见 [§8](#8-4x--50-迁移对照--migration-map)。
 > 参数与返回字段的最终事实来源是服务实际返回的 `tools/list` schema，其次才是本文；版本演进见 [CHANGELOG](CHANGELOG.md)。
 
-> Applies to **5.0.0b31**. One endpoint (`/mcp`) exposes 17 tools. The 4.x task-level tool set and the `mc_admin` router are retired; see [§8](#8-4x--50-迁移对照--migration-map) for the mapping. The live `tools/list` schema is the authoritative contract.
+> Applies to **5.0.0b32**. One endpoint (`/mcp`) exposes 17 tools. The 4.x task-level tool set and the `mc_admin` router are retired; see [§8](#8-4x--50-迁移对照--migration-map) for the mapping. The live `tools/list` schema is the authoritative contract.
 
 ## 1. 接入方式 / Endpoint and transport
 
