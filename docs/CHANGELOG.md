@@ -1,6 +1,6 @@
 # Changelog / 更新日志
 
-## 未发布 / Unreleased
+## 5.0.0b31 — 入口真值校正与文档边界 / Entry-point truthfulness and documentation boundaries
 
 ### 修复 / Fixed
 
@@ -29,6 +29,10 @@
 
 - `docs/USER_GUIDE.md` 的 §2/§3/§4/§5/§7/§8/§11/§12 仍保留约 60 处 4.x `memory-center <subcommand>` 命令示例（`init`、`reindex`、`work-start`、`symbol`…）。它们对应仍在 `core/` 中、且被回归测试覆盖的引擎能力，本轮**不逐条改写**，而是用开头的章节级边界明确标注为历史说明。若要把它们逐一映射到 5.0 入口，需要先确认每个能力在 5.0 的归属，属独立一轮。
 - 能力矩阵中的 17 条 `http`、4 条 `mcp_tool` 与 14 条 `mcp_admin_action` 声明全部属于 4.x / 引擎内部能力，本轮只做显式 legacy 标注与断言，**未删除**：`context-pack`、`freshness`、`onboard`、`domain` 若删掉条目就会失去全部 entry，且 `core_fields` / `error_semantics` 仍被回归测试消费。要收敛成 5.0 入口注册表需逐项确认归属，属独立一轮。
+
+### 版本同步 / Version sync
+
+- 包、前端、Compose 与当前版本文档同步至 5.0.0b31；版本内容对应 `baba8ea`、`6c27be8`、`76f55e5` 三个提交。
 
 ## 5.0.0b30 — 规则可执行判据与分层门禁 / Executable rule checks and layering gate
 
