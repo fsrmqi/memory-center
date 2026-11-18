@@ -1,32 +1,25 @@
-"""B-01: CLI / MCP / HTTP capability matrix tests.
+"""B-01 capability **contract catalog** tests.
 
-Verifies that all 14 required capabilities have the expected entry-point
-coverage and that entry points behave correctly with valid/invalid/empty
-workspaces.
+The 4.x entry-point declarations (17 HTTP / 4 MCP tool / 14 mc_admin action)
+were removed from ``core.foundation.capabilities``. This module now verifies
+only the contract data that engine regression tests consume — ``core_fields``
+and ``error_semantics`` — and that no entry-point declarations creep back in.
+
+The user-reachable 5.0 surface is a separate, verified registry:
+``core.foundation.entry_registry`` / ``tests/entrypoints/test_entry_registry.py``.
 """
 from __future__ import annotations
 
-import inspect
-from pathlib import Path
+from dataclasses import fields
 
-import pytest
-
+from memory_center.core.foundation import capabilities
 from memory_center.core.foundation.capabilities import (
     CAPABILITIES,
     CAPABILITY_MAP,
-    DECLARED_ENTRY_KINDS,
-    ENGINE_BACKED_ENTRY_KINDS,
-    LEGACY_ENTRY_KINDS,
-    LIVE_ENTRY_KINDS,
+    RELATED_5_0_TOOLS,
+    Capability,
     all_cli_commands,
-    all_http_routes,
-    all_mcp_admin_actions,
-    all_mcp_tools,
 )
-
-# ---------------------------------------------------------------------------
-# 1. Matrix completeness: all 14 capabilities exist
-# ---------------------------------------------------------------------------
 
 REQUIRED_CAPABILITIES = [
     "context-pack",
@@ -46,17 +39,12 @@ REQUIRED_CAPABILITIES = [
 ]
 
 
-class TestMatrixCompleteness:
-    """All 14 required capabilities must be present and have core fields."""
+class TestContractCatalog:
+    """All 14 required capabilities must be present with complete contracts."""
 
     def test_all_required_capabilities_present(self):
         for name in REQUIRED_CAPABILITIES:
             assert name in CAPABILITY_MAP, f"Missing capability: {name}"
-
-    def test_each_capability_has_entries(self):
-        for name in REQUIRED_CAPABILITIES:
-            cap = CAPABILITY_MAP[name]
-            assert len(cap.entries) > 0, f"{name} has no entry points"
 
     def test_each_capability_has_core_fields(self):
         for name in REQUIRED_CAPABILITIES:
@@ -68,254 +56,31 @@ class TestMatrixCompleteness:
             cap = CAPABILITY_MAP[name]
             assert cap.error_semantics, f"{name} has no error_semantics"
 
+    def test_catalog_declares_no_entry_points(self):
+        """A contract catalog must not masquerade as an entry-point registry."""
+        field_names = {f.name for f in fields(Capability)}
+        assert field_names == {"name", "core_fields", "error_semantics"}, (
+            f"unexpected Capability fields: {sorted(field_names)}.\n"
+            "Step 1: remove any entry-point field from the B-01 contract catalog.\n"
+            "Step 2: declare the real 5.0 surface in core.foundation.entry_registry instead."
+        )
+        for legacy in ("EntryPoint", "entries_by_kind", "all_http_routes",
+                       "all_mcp_tools", "all_mcp_admin_actions"):
+            assert not hasattr(capabilities, legacy), (
+                f"capabilities.py still exports legacy entry helper '{legacy}'"
+            )
+        assert CAPABILITIES and all(isinstance(c, Capability) for c in CAPABILITIES)
 
-# ---------------------------------------------------------------------------
-# 2. CLI coverage: commands exist in the real CLI app
-# ---------------------------------------------------------------------------
-
-class TestCLICoverage:
-    """Verify every CLI entry in the matrix is a real Typer command."""
-
-    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
-    def test_cli_commands_are_registered(self):
-        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
-
-
-# ---------------------------------------------------------------------------
-# 3. HTTP coverage: routes exist in _route_request
-# ---------------------------------------------------------------------------
-
-class TestHTTPCoverage:
-    """Verify every HTTP entry in the matrix is handled in _route_request."""
-
-    @pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
-    def test_http_routes_are_handled(self) -> None:
-        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
-
-
-# ---------------------------------------------------------------------------
-# 4. MCP coverage: tool names and mc_admin actions exist
-# ---------------------------------------------------------------------------
-
-class TestMCPCoverage:
-    """Verify every MCP entry in the matrix is registered."""
-
-    def test_mcp_tools_are_defined(self):
-        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
-
-    def test_mcp_admin_actions_in_dispatch(self):
-        """Engine-backed admin actions must still resolve in the legacy registry.
-
-        ``build_admin_registry()`` has no production caller in 5.0, so this is
-        an engine-contract check, **not** proof of a live entry point. The old
-        check only looked for the name anywhere in the source text; resolve
-        against ``CommandRegistry.names()`` instead.
-        """
-        from memory_center.application.admin import build_admin_registry
-
-        registry = build_admin_registry(workspace_file="unused.yaml")
-        registered = set(registry.names())
-        for cap in CAPABILITIES:
-            for entry in cap.entries:
-                if entry.kind in ENGINE_BACKED_ENTRY_KINDS:
-                    assert registry.has(entry.identifier), (
-                        f"engine-backed action '{entry.identifier}' for capability "
-                        f"'{cap.name}' is not registered by build_admin_registry()"
-                    )
-        assert set(all_mcp_admin_actions()) <= registered
-
-
-# ---------------------------------------------------------------------------
-# 5. Entry point helpers return correct data
-# ---------------------------------------------------------------------------
-
-class TestEntryPointHelpers:
-    """Verify the helper functions return expected aggregated data."""
-
-    def test_all_cli_commands_is_empty_in_5_0(self):
-        """``memory-center`` has no subcommands, so the shim must stay empty."""
+    def test_no_cli_subcommands_in_5_0(self):
+        """``memory-center`` has no subcommands; launchers live in the registry."""
         assert all_cli_commands() == []
 
-    def test_all_http_routes_returns_non_empty(self):
-        routes = all_http_routes()
-        assert len(routes) > 0
+    def test_related_5_0_tools_point_at_real_tools(self):
+        """Related (not equivalent) tools must actually exist in the registry."""
+        from memory_center.core.foundation.entry_registry import mcp_tool_names
 
-    def test_all_mcp_tools_returns_non_empty(self):
-        tools = all_mcp_tools()
-        assert len(tools) > 0
-
-    def test_all_mcp_admin_actions_returns_non_empty(self):
-        actions = all_mcp_admin_actions()
-        assert len(actions) > 0
-
-    def test_domain_only_has_mcp_tool(self):
-        """domain capability should only have mc_domain, no CLI/HTTP."""
-        entries = CAPABILITY_MAP["domain"].entries
-        kinds = {e.kind for e in entries}
-        assert "mcp_tool" in kinds
-        assert "cli" not in kinds
-        assert "http" not in kinds
-
-    def test_context_pack_has_http_and_mcp_no_cli(self):
-        entries = CAPABILITY_MAP["context-pack"].entries
-        kinds = {e.kind for e in entries}
-        assert "http" in kinds
-        assert "mcp_tool" in kinds
-        assert "cli" not in kinds
-
-
-# ---------------------------------------------------------------------------
-# 5b. Truthfulness: the matrix must not claim entry points 5.0 does not have
-# ---------------------------------------------------------------------------
-
-class TestEntryPointTruthfulness:
-    """Turn 'this matrix is partly historical' into executable assertions.
-
-    The B-01 matrix still describes core fields and error semantics that
-    regression tests rely on, but most of its entry points belong to 4.x.
-    These tests stop that historical data from being read as a live registry.
-    """
-
-    def test_no_cli_entries_remain(self):
-        for cap in CAPABILITIES:
-            bad = [e.identifier for e in cap.entries if e.kind == "cli"]
-            assert not bad, (
-                f"{cap.name} still declares CLI entry point(s) {bad}.\n"
-                "Step 1: memory-center has no subcommands in 5.0; remove the cli entry.\n"
-                "Step 2: describe the capability against a real 5.0 surface "
-                "(see docs/MCP_GUIDE.md) instead."
-            )
-
-    def test_no_entry_kind_is_claimed_live_in_5_0(self):
-        """The matrix is a historical contract, not an entry-point registry.
-
-        ``build_admin_registry()`` has no 5.0 production caller; the live
-        surfaces are ``service/platform_mcp.register_tools``, the
-        ``/api/v1/*`` routers and the ``/admin/`` UI.
-        """
-        assert LIVE_ENTRY_KINDS == frozenset(), (
-            "Step 1: a kind was marked live — verify it is exposed by the "
-            "5.0 service, not merely reachable from a test.\n"
-            "Step 2: if genuinely live, add an assertion against that surface."
-        )
-        assert ENGINE_BACKED_ENTRY_KINDS <= LEGACY_ENTRY_KINDS
-
-    def test_every_declared_kind_is_classified(self):
-        kinds = {e.kind for cap in CAPABILITIES for e in cap.entries}
-        assert kinds, "matrix lost all its entry declarations"
-        assert kinds <= set(DECLARED_ENTRY_KINDS), (
-            f"unclassified entry kinds: {sorted(kinds - set(DECLARED_ENTRY_KINDS))}.\n"
-            "Step 1: add the new kind to LIVE_ENTRY_KINDS or LEGACY_ENTRY_KINDS.\n"
-            "Step 2: add a matching verification test."
-        )
-        assert not (LIVE_ENTRY_KINDS & LEGACY_ENTRY_KINDS)
-
-    def test_legacy_mcp_tool_names_are_absent_from_5_0_surface(self):
-        """Names marked legacy must not have become live tools unnoticed."""
-        from memory_center.service import platform_mcp
-
-        src = inspect.getsource(platform_mcp)
-        for name in all_mcp_tools():
-            assert f"def {name}(" not in src, (
-                f"{name} is declared legacy but is now a live 5.0 tool; "
-                "move it out of LEGACY_ENTRY_KINDS and update the matrix."
-            )
-
-    def test_legacy_http_paths_are_absent_from_5_0_routers(self):
-        """The /workspace/* paths must not be registered by any 5.0 router."""
-        from memory_center.service import (
-            governance_routes,
-            platform_routes,
-            workspace_routes,
-        )
-
-        src = "\n".join(
-            inspect.getsource(mod)
-            for mod in (governance_routes, platform_routes, workspace_routes)
-        )
-        for path in all_http_routes():
-            assert f"'{path}'" not in src and f'"{path}"' not in src, (
-                f"{path} is declared legacy but appears in a 5.0 router; "
-                "reclassify it as live."
-            )
-
-
-# ---------------------------------------------------------------------------
-# 6. HTTP entry: invalid / empty / valid workspace
-# ---------------------------------------------------------------------------
-
-@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
-class TestHTTPWorkspaceParsing:
-    """Test that _route_request handles invalid/empty/valid workspaces."""
-
-    def _route(self, path: str, params: dict, ws: str | None = None):
-        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
-
-    def test_health_returns_ok(self):
-        result = self._route("/health", {})
-        assert isinstance(result, dict)
-        assert result.get("ok") is True
-
-    def test_invalid_workspace_raises_not_database_error(self):
-        """A non-existent workspace raises FileNotFoundError, not
-        DatabaseError('file is not a database'). The HTTP handler layer
-        wraps this, but _route_request itself propagates the error."""
-        with pytest.raises(FileNotFoundError):
-            self._route(
-                "/workspace/status",
-                {"workspace": ["/nonexistent/path/workspace.yaml"]},
-            )
-
-    def test_empty_workspace_no_crash(self):
-        """Calling /health with empty workspace should still work."""
-        result = self._route("/health", {})
-        assert isinstance(result, dict)
-
-    def test_valid_workspace_status(self, demo_workspace: Path):
-        ws = str(demo_workspace)
-        result = self._route(
-            "/workspace/status",
-            {"workspace": [ws]},
-            ws,
-        )
-        assert isinstance(result, dict)
-        assert "workspace" in result or "status" in result
-
-
-# ---------------------------------------------------------------------------
-# 7. CLI entry: invalid workspace smoke
-# ---------------------------------------------------------------------------
-
-@pytest.mark.skip(reason="4.x CLI/HTTP/Hook/MCP 合同已退役；5.0 接入由 tests/service 验证")
-class TestCLIWorkspaceParsing:
-    """Test that CLI commands handle invalid workspace gracefully."""
-
-    def _run(self, *args: str):
-        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
-
-    def test_status_with_valid_workspace(self, demo_workspace: Path):
-        ws = str(demo_workspace)
-        result = self._run("status", "--workspace", ws)
-        assert result.exit_code == 0
-        assert isinstance(result.output, str)
-        assert "file is not a database" not in result.output
-
-    def test_backend_consistency_with_valid_workspace(self, demo_workspace: Path):
-        ws = str(demo_workspace)
-        result = self._run("backend-consistency", "--workspace", ws)
-        assert result.exit_code == 0
-        assert "file is not a database" not in result.output
-
-
-# ---------------------------------------------------------------------------
-# 8. Source-code level: workspace.yaml is never passed to RuntimeStore/RuntimeStore
-# ---------------------------------------------------------------------------
-
-class TestWorkspaceParsingContract:
-    """Verify that entry points don't open workspace.yaml as a database."""
-
-    def test_http_server_uses_workspace_store(self):
-        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
-
-    def test_mcp_server_uses_workspace_store(self):
-        pytest.skip("4.x 入口合同已退役；5.0 常驻服务合同由 tests/service 验证")
+        live = set(mcp_tool_names())
+        for cap_name, tools in RELATED_5_0_TOOLS.items():
+            assert cap_name in CAPABILITY_MAP
+            assert tools, f"{cap_name} has an empty related-tool list"
+            assert set(tools) <= live, f"{cap_name} points at a non-existent tool"

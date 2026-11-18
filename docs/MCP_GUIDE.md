@@ -327,6 +327,8 @@ mc_job_cancel(job_id)           # 需要时取消，不发布当前 generation
 | `mc_start(intent=…)`（隐式 workspace） | `mc_start(workspace_id=…, intent=…)`，必须显式项目 |
 | 独立 Wiki MCP / `personal-assistant-wiki` | 统一 `/mcp` 的四个 `assistant_*` 工具 |
 
+上表只覆盖 MCP 侧名字。CLI 侧的**逐条**映射见 [USER_GUIDE 附录 A](USER_GUIDE.md#appendix-a)：它覆盖该文档正文出现的全部 48 个 4.x 子命令，并明确标出哪些能力在 5.0 **没有公开入口**（不是待补的缺口）。5.0 入口的机器可读清单是 `core/foundation/entry_registry.py`，由 `tests/entrypoints/test_entry_registry.py` 对运行态 `tools/list` 与真实路由表校验。/ For the full per-command CLI mapping see [USER_GUIDE Appendix A](USER_GUIDE.md#appendix-a); the machine-readable 5.0 entry list is `core/foundation/entry_registry.py`, verified against the running service.
+
 ### 8.1 4.x 能力的当前状态 / Retired surfaces
 
 下表这些名字仍出现在 4.x 文档与仓库内的引擎实现里（`memory_center/application/`、`memory_center/core/`），但 5.0 服务没有挂载对应的 CLI/HTTP/管理路由，因此**不是 5.0 的承诺能力**。保留在此，是为了让从 4.x 迁移过来的接入方知道该去哪里找替代：

@@ -1,5 +1,25 @@
 # Changelog / 更新日志
 
+## 未发布 / Unreleased
+
+### 变更 / Changed
+
+- **能力矩阵不再是入口表，5.0 入口有了经校验的注册表**。新增 `core/foundation/entry_registry.py`：共 45 条声明（17 个 MCP 工具、`/mcp` 端点、2 个管理页路径、20 条用户级 HTTP 路由〔其中 18 条 `/api/v1/*`〕、5 个 CLI 启动器），全部为纯数据、不导入 `service`/`platform`/`application`。原 `capabilities.py` 的 17 条 `http`、4 条 `mcp_tool`、14 条 `mcp_admin_action` 声明**全部删除**，模块退化为 4.x B-01 能力契约目录（`core_fields` / `error_semantics`，仍被 `tests/regression/test_b01_behavior_matrix.py` 消费）；这 35 个旧声明连同文档中出现的 `mc_admin` / `mc_sync` / `mc_handoff`，改作 `RETIRED_4X_*` **否定清单**（38 个标识）保存，供测试确认它们没有悄悄变成 5.0 入口。`RELATED_5_0_TOOLS` 只标注「相关但不等价」的工具（`context-pack`↔`mc_lookup` 等），明确不构成替换关系。
+- **入口真值由运行态校验，不再靠源码字符串匹配**。`tests/entrypoints/test_entry_registry.py` 把声明的工具名与真实 `tools/list` 管理器、HTTP `(method, path)` 与真实 FastAPI 路由表、CLI 启动器与 `pyproject.toml [project.scripts]` 逐一比对；同时断言退役工具名不在活工具集、`/workspace/*` 与 `/ui/*` 不在 5.0 路由表，而 `build_admin_registry()` 仍能解析 14 个旧 action（引擎契约不变）。注入一个假工具名、或把 `mc_admin` 重新声明为 live，都会失败并给出 Step 1 / Step 2。
+- `tests/entrypoints/test_capability_matrix.py` 重写为契约目录断言：14 项必备能力的 `core_fields` / `error_semantics` 完整、`Capability` 只有三个字段、不得再导出 `EntryPoint` / `entries_by_kind` 等旧入口 helper、`all_cli_commands()` 恒为空。原先针对 4.x CLI/HTTP 入口的跳过用例一并移除。
+- `core/foundation/README.md` 说明两份纯数据清单的分工。
+
+### 文档 / Docs
+
+- `docs/USER_GUIDE.md` 新增**附录 A：4.x 命令 → 5.0 入口逐条对照**，覆盖正文 §2–§12 出现的全部 48 个 4.x 子命令，以及退役 MCP 工具名、`/workspace/*` 读模型、4.x 引擎函数与推理模板。每条给出「等价 / 近似 / 无公开入口」三态之一与差距说明：**大量 4.x 能力在 5.0 没有任何公开入口**，「无公开入口」不是待办也不是隐藏开关，不得照名字拼命令。§2、§3、§4、§5、§7、§8、§11、§12 各加一条章节级历史提示与附录链接，开头「章节边界」补上逐条对照的说明。
+- 由于不改写历史示例，`test_documentation_contracts.py` 要求保留的 `evidence-subgraph`、`eval-reasoning-prompts`、四个推理模板与验证设计字段仍原样保留在正文中。
+- `docs/MCP_GUIDE.md` §8 迁移对照补上到 USER_GUIDE 附录 A 的双向指引，并指向机器可读的 `entry_registry.py`。
+
+### 已知边界 / Known limits
+
+- 入口注册表的 HTTP 部分刻意只列「用户/宿主会直接调用」的 20 条路由，不复制 90 余条管理 API；完整路由以服务实际 OpenAPI 为准，避免清单变成第二份需同步维护的路由定义。测试保证所列每条都真实存在，但不保证穷尽。
+- MCP 工具集合用 `set(声明) == set(真实 tools/list)` 做完整校验；若将来新增工具，必须同步更新注册表、MCP_GUIDE 与 USER_GUIDE，否则测试失败。
+
 ## 5.0.0b31 — 入口真值校正与文档边界 / Entry-point truthfulness and documentation boundaries
 
 ### 修复 / Fixed

@@ -10,6 +10,8 @@
 > **章节边界 / Reading scope**：本文的**任务地图、§1 安装与 §6 的 MCP / 宿主绑定 / HTTP 三段是 5.0 现行入口**（§6 末尾另有一节明确标注为 4.x 历史能力）；§2、§3、§4、§5、§7、§8、§11、§12 中大量 `memory-center <subcommand>` 示例（`init`、`reindex`、`work-start`、`symbol`…），以及 `mc_admin(action=…)`、`mc_freshness`、`serve-http` 和 `/workspace/*` 读模型，都是 4.x 的 CLI / facade 命令。5.0 的 `memory-center` **只启动服务、没有任何子命令**；这些示例保留下来是为说明仍在 `core/` 中的引擎能力与历史决策背景，**不能照抄执行，也不构成 5.0 兼容承诺**。
 >
 > The resident service is the only 5.0 entry. **The Task Map, §1 Install and the MCP / host-bindings / HTTP parts of §6 describe current 5.0 surfaces** (the closing subsection of §6 is explicitly labelled 4.x historical). The many `memory-center <subcommand>` examples in §2/§3/§4/§5/§7/§8/§11/§12 (plus `mc_admin(action=…)`, `mc_freshness`, `serve-http` and `/workspace/*` read models) are 4.x CLI/facade commands. In 5.0 `memory-center` only launches the service and has **no subcommands** — those examples document engine capabilities still living under `core/` and are not executable.
+>
+> **逐条对照 / Per-command mapping**：[附录 A](#appendix-a) 把本文出现的全部 4.x 命令、退役工具名与旧读模型**逐条**映射到 5.0 入口，状态只有「等价 / 近似 / 无公开入口」三种；「无公开入口」表示 5.0 确实没有暴露该能力，不要照名字拼命令或当成隐藏入口。/ [Appendix A](#appendix-a) maps every 4.x command, retired tool name and legacy read-model path in this guide to a 5.0 entry point, marked equivalent / related / no public entry.
 
 > **只读状态 / Read-only status**：MCP 的 `mc_service_status` 无参数、只读，返回服务就绪状态、版本、能力、存储与索引预算；也可用 `GET /health/live`、`GET /health/ready` 与状态 API。完整 tool 合同见 [MCP 接入指南](MCP_GUIDE.md)。
 >
@@ -70,6 +72,8 @@ curl -s http://127.0.0.1:8765/health/ready
 版本、就绪状态、能力与索引预算由无参数的 MCP 工具 `mc_service_status` 返回（或 `GET /health/live`、`GET /health/ready`）。字段约定见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)。
 
 ## 2. Initialize Workspace / 初始化工作区
+
+> ⚠️ **4.x 历史示例，不可执行** / 4.x historical examples — not executable in 5.0. 本章每个命令的 5.0 对应入口见 [附录 A：逐条对照](#appendix-a)。
 
 ```bash
 memory-center init --workspace-root /abs/path/to/repo
@@ -169,6 +173,8 @@ Java 调用解析器会将可证明的本地调用改写为更高置信度目标
 
 ## 3. Reindex / 重建索引
 
+> ⚠️ **4.x 历史示例，不可执行** / 4.x historical examples — not executable in 5.0. 本章每个命令的 5.0 对应入口见 [附录 A：逐条对照](#appendix-a)。
+
 全量：
 
 ```bash
@@ -202,6 +208,8 @@ memory-center reindex --workspace /abs/path/.memory-center/workspace.yaml --chan
 
 ## 4. Daily Workflow / 日常工作流
 
+> ⚠️ **4.x 历史示例，不可执行** / 4.x historical examples — not executable in 5.0. 本章每个命令的 5.0 对应入口见 [附录 A：逐条对照](#appendix-a)。
+
 最推荐的高频命令：
 
 ```bash
@@ -227,6 +235,8 @@ Memory Center 有四类记忆边界。每类回答一个问题，对应真实存
 介于四类之下还有一层 **Session Notes（L0.5 叙事记忆）**：还不够成为 case、但比原始事件可读的"这次决定了什么/下一步做什么"。用 `mc_admin(action="note_record", text=..., event_type=decision|fact|preference|rule|next_step, session_id=...)` 显式记录，`note_list` / `note_search` 查看，`note_supersede` 修正（追加替代决策行 + 新条，原条永不改写），`note_forget` 遗忘（追加决策行，只隐藏具名条目；被遗忘后同 fingerprint 可重新记录）；两类决策行都记录操作者（`source` 作为 actor）。隐私门 fail-closed：绝对路径与密钥形态直接拒收，`<private>...</private>` 片段落盘前剥除。
 
 ## 5. Common Queries / 常见查询
+
+> ⚠️ **4.x 历史示例，不可执行** / 4.x historical examples — not executable in 5.0. 本章每个命令的 5.0 对应入口见 [附录 A：逐条对照](#appendix-a)。
 
 ### 查任务上下文
 
@@ -329,6 +339,8 @@ The 4.x `serve-http` command, `MEMORY_CENTER_HTTP_TOKEN`, `/workspace/*` read mo
 
 ## 7. Multi-Workspace / 多工作区
 
+> ⚠️ **4.x 历史示例，不可执行** / 4.x historical examples — not executable in 5.0. 本章每个命令的 5.0 对应入口见 [附录 A：逐条对照](#appendix-a)。
+
 支持：
 
 - 一个大根目录下多个服务
@@ -344,6 +356,8 @@ memory-center add-to-group ...
 ```
 
 ## 8. Maintenance / 维护
+
+> ⚠️ **4.x 历史示例，不可执行** / 4.x historical examples — not executable in 5.0. 本章每个命令的 5.0 对应入口见 [附录 A：逐条对照](#appendix-a)。
 
 ### Quality and storage / 质量与存储（4.6.12）
 
@@ -466,6 +480,8 @@ memory-center artifact delivery-skill-publish --workspace /abs/path/.memory-cent
 - [ONTOLOGY.md](./ONTOLOGY.md)
 
 ## 11. Implemented Features / 已实现功能（当前 4.6.12）
+
+> ⚠️ **4.x 历史示例，不可执行** / 4.x historical examples — not executable in 5.0. 本章每个命令的 5.0 对应入口见 [附录 A：逐条对照](#appendix-a)。
 
 这一节是当前可用功能说明，主要帮助使用者理解系统里已经能用什么，不代表这些功能仍处于待实现状态。
 
@@ -748,6 +764,8 @@ record_design_decision(workspace_file, topic="...", decision="...", rationale=".
 
 ## 12. Troubleshooting / 故障排除
 
+> ⚠️ **4.x 历史示例，不可执行** / 4.x historical examples — not executable in 5.0. 本章每个命令的 5.0 对应入口见 [附录 A：逐条对照](#appendix-a)。
+
 ### 12.1 真实工作区性能与后台任务
 
 性能快照是显式、低频的运维动作，不会在普通查询中自动执行：
@@ -819,3 +837,132 @@ memory-center http-route-contract-audit
   - `run_completion_audit()`, `record_design_decision()`, `generate_audit_report()`
 
 详见各模块的 docstring 和 [ARCHITECTURE.md](./ARCHITECTURE.md) 附录 B。
+
+
+<a id="appendix-a"></a>
+
+## 附录 A / Appendix A: 4.x 命令 → 5.0 入口逐条对照
+
+本附录覆盖本文 §2–§12 出现的**全部** 4.x 命令、退役 MCP 工具名、旧 HTTP 读模型与 4.x 引擎函数。状态只有三种：
+
+| 状态 | 含义 |
+|---|---|
+| **等价** | 5.0 有同意图的公开入口，直接按「5.0 入口」列操作 |
+| **近似** | 5.0 有相关入口，但字段、语义或作用范围不同，**不是**替换关系；差距写在「说明」列 |
+| **无公开入口** | 5.0 的 MCP 工具、HTTP 路由、管理页与 CLI 启动器都没有暴露它。实现可能仍在 `core/` 并被回归测试覆盖，但用户与 Agent 无法调用 |
+
+> 「无公开入口」不是待办，也不是隐藏开关：不要把 4.x 命令名拼到 `memory-center` 后面去试。入口真值以 `core/foundation/entry_registry.py`（由 `tests/entrypoints/test_entry_registry.py` 对运行态服务校验）与实时 `tools/list` 为准。/ "No public entry" is neither a TODO nor a hidden flag — the authoritative list is `core/foundation/entry_registry.py` and the live `tools/list`.
+
+### A.1 初始化、项目登记与多工作区（§2 / §7）
+
+| 4.x 标识 | 章 | 状态 | 5.0 入口 | 说明 |
+|---|---|---|---|---|
+| `memory-center init --workspace-root` | §2 | 等价 | 管理页 `/admin/` 登记项目；`POST /api/v1/workspaces` | 5.0 不写 `workspace.yaml`，项目由服务目录管理 |
+| `init --dry-run` | §2 | 等价 | `POST /api/v1/workspaces/preview` | 只读预览，不落库 |
+| `memory-center doctor` | §2 | 无公开入口 | — | 5.0 无 binding 探测命令；`mc_service_status` / `GET /health/ready` 只看服务就绪 |
+| `workspace.yaml`、`.memory-center/rules/`、`.memory-center/artifacts/` | §2 | 无公开入口 | — | 5.0 全新安装重建，不读取旧 workspace 文件 |
+| `.memory-center/hooks.yaml` | §2 / §6 | 无公开入口 | — | 5.0 只被审计读取，不执行任何 hook |
+| `register-workspace` | §7 | 等价 | `POST /api/v1/workspaces` | 需管理员令牌 |
+| `create-group` | §7 | 无公开入口 | — | 5.0 没有 group 聚合；多项目按 `workspace_id` 授权隔离 |
+| `add-to-group` | §7 | 无公开入口 | — | 同上 |
+
+### A.2 索引、评测与后台作业（§3 / §11 / §12.1）
+
+| 4.x 标识 | 章 | 状态 | 5.0 入口 | 说明 |
+|---|---|---|---|---|
+| `reindex --workspace` | §3 / §11 | 等价 | `mc_index(workspace_id)`；`POST /api/v1/workspaces/{workspace_id}/index` | 返回持久 `job_id` |
+| `reindex --project` / `--path` / `--changed-only --scope all` | §3 | 近似 | `mc_index(workspace_id)` | 5.0 后台索引不接受 `--project` / `--path` / `--changed-only` / `--scope`，是整库作业 |
+| `scoped-refresh-performance` | §3 / §8 | 无公开入口 | — | 局部刷新统计属引擎侧能力，无工具或路由 |
+| `eval-cochange` / `--apply` | §3 | 无公开入口 | — | 4.x 评测脚本，5.0 未暴露 |
+| `eval-parser-benchmark` | §11.2 | 无公开入口 | — | 同上 |
+| `eval-golden --cases` | §8 / §11.2 | 无公开入口 | — | 同上；`examples/golden-benchmark/` 仅作历史模板 |
+| `eval-token-benchmark` | §8 | 无公开入口 | — | 同上 |
+| `regression-smoke` | §8 | 无公开入口 | — | 同上 |
+| `job-status --job-id` | §12.1 | 等价 | `mc_job_status(job_id)`；`GET /api/v1/jobs` | 重试用 `POST /api/v1/jobs/{job_id}/retry` |
+| `GET /workspace/job-status` | §12.1 | 等价 | `GET /api/v1/jobs` | 旧 `/workspace/*` 读模型已退役 |
+| `performance-snapshot` | §12.1 | 无公开入口 | — | 显式低频运维脚本，5.0 无路由 |
+| `performance-status` | §12.1 | 无公开入口 | — | 同上 |
+| `http-route-contract-audit` | §12.1 | 无公开入口 | — | 同上 |
+| `memory-center inspect` | §12.6 | 近似 | `mc_service_status` / `GET /health/ready`；按 `trace_id` 查 `GET /api/v1/call-traces/{trace_id}` | 5.0 用服务状态与调用轨迹排障，没有 workspace 级 inspect |
+
+### A.3 会话生命周期与记忆写入（§4 / §11.4）
+
+| 4.x 标识 | 章 | 状态 | 5.0 入口 | 说明 |
+|---|---|---|---|---|
+| `work-start` | §4 | 等价 | `mc_start(workspace_id, intent)` | 参数从 `--workspace` 改为 `workspace_id` |
+| `work-resume` | §4 | 等价 | `mc_resume(session_id)` | 返回接续契约 |
+| `work-close --session-id` | §4 | 等价 | `mc_close(session_id, outcome)` | `outcome` 必填 |
+| `work-sync` | §4 | 无公开入口 | — | 5.0 会话由 `mc_start` / `mc_resume` / `mc_close` 管理 |
+| `work-handoff` / `build_handoff_context()` | §4 / §11.4 | 无公开入口 | — | 5.0 没有 handoff 工具；引擎函数仍在 `core/navigation` |
+| `work-health` | §4 | 无公开入口 | — | 同上 |
+| `record-case` / `mc_admin(action="write_judge")` | §4 | 近似 | `mc_memory_write(workspace_id, content, confirmed=...)` | 5.0 没有 L1 case atom 写入，也没有追加式 decision 审计链 |
+| `mc_admin(action="note_record")` | §4 | 近似 | `mc_memory_write(...)` | Session Notes（L0.5）在 5.0 没有专门工具 |
+| `sniff --intent` | §4 | 近似 | `mc_lookup(..., mode="hybrid")` | 5.0 无独立意图探测入口，`mode` 需显式指定 |
+
+### A.4 查询与影响分析（§5 / §11.1 / §11.3 / §12.5）
+
+| 4.x 标识 | 章 | 状态 | 5.0 入口 | 说明 |
+|---|---|---|---|---|
+| `symbol --name` | §5 | 等价 | `mc_lookup(..., mode="symbol")` | — |
+| `search-code --query` | §5 | 等价 | `mc_lookup(..., mode="keyword")` | — |
+| `callers --symbol` | §5 | 等价 | `mc_lookup(..., mode="callers")` | — |
+| `callees --symbol` | §5 | 等价 | `mc_lookup(..., mode="callees")` | — |
+| `impact --target` | §5 | 等价 | `mc_analyze(workspace_id, target)` | 向量相似度不参与调用关系判定 |
+| `detect-changes --scope all` | §5 | 无公开入口 | — | 5.0 没有变更检测工具 |
+| `change-review --detail-level` / `mc_admin(action="change_review")` | §5 | 无公开入口 | — | `mc_analyze` 只给影响链，不产生 review 报告、验证动作清单与刷新预算 |
+| `memory_query_hybrid()` / `hybrid_retrieve()` / `HybridRetrievalConfig` | §11.1 | 近似 | `mc_lookup(..., mode="hybrid")` | 引擎函数仍可被 Python 调用，但返回字段与 5.0 工具不同 |
+| `UnifiedBackendQuery` / `query_records` / `query_timeline` / `check_health()` | §11.3 | 无公开入口 | — | 引擎内部读模型，5.0 无对应工具或路由 |
+| `expand_ref` / `drill_timeline` / `drill_task` / `build_facade_summary` | §11.4 / §12.5 | 近似 | `mc_ref(ref_id)`；`mc_resume(session_id)` | `DrillDownNavigator` 仍是引擎能力，5.0 只暴露引用回取与会话恢复 |
+
+### A.5 MCP / HTTP / 宿主绑定（§6）
+
+| 4.x 标识 | 章 | 状态 | 5.0 入口 | 说明 |
+|---|---|---|---|---|
+| `mc_admin(action=…)`（含 `change_review` / `note_record` / `write_judge` / `case_*`） | §4 / §5 / §6 / §8 | 无公开入口 | — | 管理路由整体退役；`assistant_admin` 只支持 `validate` / `scan` / `index`，**不是**替代品 |
+| `mc_context_pack` | §6 | 近似 | `mc_lookup` | 不返回 `token_estimate` / `checklist` / `freshness` / `risks` 等 B-01 字段 |
+| `mc_freshness` | §6 | 近似 | `mc_service_status` | 只返回就绪、版本、能力与索引预算，没有 freshness banner |
+| `mc_onboard` | §6 | 无公开入口 | — | 架构导览引擎能力，5.0 未暴露 |
+| `mc_domain` | §6 | 无公开入口 | — | 业务域抽取引擎能力，5.0 未暴露 |
+| `mc_sync` / `mc_handoff` | §6 | 无公开入口 | — | 4.x 任务级工具，已退役 |
+| `serve-http` | §6 | 无公开入口 | `memory-center-service` | 5.0 启动服务即 HTTP 服务，不需要单独子命令 |
+| `MEMORY_CENTER_HTTP_TOKEN` | §6 | 无公开入口 | `<data-dir>/admin-token` + `Authorization: Bearer` | 旧 HTTP 令牌变量退役 |
+| `/ui/*` / `/app` Vue SPA | §6 | 无公开入口 | `/admin/` | 旧页面退役 |
+| `/workspace/*` JSON 读模型 | §6 / §8 / §12 | 等价（路径层） | `/api/v1/*` | 字段与错误合同不同，以 [项目目录管理指南](V5_CATALOG_GUIDE.md) 为准 |
+| `setup-agent` / `generate-hooks` / `runtime-audit --fix` | §6 | 无公开入口 | 宿主配置 `/mcp` 端点 | 5.0 没有绑定生成或一键修复命令；`repair_agent_mcp_bindings()` 是内部函数 |
+| `eval-reasoning-prompts` 与 `clarify_change_request` / `audit_project_claim` / `design_minimal_validation` / `compare_change_options` | §6 | 无公开入口 | — | 静态模板由 benchmark 消费；5.0 未注册任何 MCP Prompt |
+| `export-evidence-subgraph` / `GET /workspace/evidence-subgraph` | §6 | 无公开入口 | — | `core/presentation/evidence_subgraph.py` 仍是引擎能力，但没有 MCP 工具或 `/api/v1` 路由 |
+
+### A.6 质量门禁、Case 治理与可验证交付 Skill（§8）
+
+| 4.x 标识 | 章 | 状态 | 5.0 入口 | 说明 |
+|---|---|---|---|---|
+| `quality-gate` | §8 | 无公开入口 | — | 只读发布质量决策，5.0 未暴露 |
+| `runtime-governance` | §8 | 无公开入口 | — | 4.x 运行时治理统计，与 5.0 管理页「知识治理」不是同一能力 |
+| `case-supersede` / `mc_admin(action="case_supersede")` / `/workspace/case-supersede` | §8 | 无公开入口 | — | L1 case 追加式决策治理在 5.0 无入口 |
+| `case-decisions` / `mc_admin(action="case_decision_list")` | §8 | 无公开入口 | — | 同上 |
+| `case-reinstate` / `mc_admin(action="case_reinstate")` | §8 | 无公开入口 | — | 同上 |
+| `status --workspace` | §8 | 近似 | `mc_service_status` / `GET /health/ready` / `GET /api/v1/service/status` | 5.0 状态是服务级，不是 workspace 级 |
+| `artifact delivery-skill-candidate` | §8 | 近似 | 管理页 `/admin/`「Skill 管理」；`assistant_skill` | 5.0 是受管 Skill 目录模型，不是 4.x 交付流水线，语义不等价 |
+| `artifact delivery-record-validation` / `delivery-record-validation --evidence-types` | §8 | 近似 | 同上 | 同上 |
+| `artifact delivery-skill-contract-update` | §8 | 近似 | 同上；`GET/PATCH /api/v1/governance/skill-sources` | 同上 |
+| `artifact delivery-skill-canary` | §8 | 近似 | 同上 | 同上 |
+| `artifact delivery-skill-observe` | §8 | 近似 | 同上 | 同上 |
+| `artifact delivery-skill-evaluate` | §8 | 近似 | 同上 | 同上 |
+| `artifact delivery-skill-replay` | §8 | 近似 | 同上 | 同上 |
+| `artifact delivery-skill-publish` | §8 | 近似 | 同上；`GET /api/v1/governance/discovered-skills` | 同上 |
+| `delivery-skill-rollback` / `delivery-failure-candidates` / `delivery-skill-synthesize` | §8 | 无公开入口 | — | 4.x 离线维护命令，5.0 未暴露 |
+
+### A.7 基准、完成审计与最佳实践（§11）
+
+| 4.x 标识 | 章 | 状态 | 5.0 入口 | 说明 |
+|---|---|---|---|---|
+| `record_benchmark_trend` / `get_benchmark_trends` / `generate_benchmark_report` | §11.2 / §11.6 | 无公开入口 | — | 引擎函数；5.0 没有趋势记录工具或路由 |
+| `run_completion_audit` | §11.5 / §11.6 | 无公开入口 | — | 引擎函数；5.0 没有完成审计入口 |
+| `record_design_decision` / `get_design_decisions` / `generate_audit_report` | §11.5 / §11.6 | 无公开入口 | — | 同上 |
+| `hybrid_retrieve` / `record_benchmark_trend` 的「日常开发流程」组合 | §11.6 | 近似 | `mc_start` → `mc_lookup` → `mc_analyze` → `mc_close` | 见本文「任务地图」；§11.6 的 Python 片段是 4.x 引擎用法 |
+
+### A.8 结论 / Takeaway
+
+5.0 的用户可达入口总共只有五类，全部列在 `core/foundation/entry_registry.py`：17 个 MCP 工具、`/mcp` 端点、`/admin/` 管理页、`/api/v1/*` 路由与 5 个 CLI 启动器。上表中大量「无公开入口」的能力并没有被移植，也不是等待补上的缺口——它们是 4.x 引擎资产，5.0 只复用了其中一部分算法。**判断某个能力能不能调用，只看 `tools/list` 与实际路由表，不要看本文的历史命令名。**
+
+The 5.0 user-reachable surface has exactly five kinds of entry, all listed in `core/foundation/entry_registry.py`: 17 MCP tools, the `/mcp` endpoint, the `/admin/` UI, `/api/v1/*` routes and 5 CLI launchers. The many "no public entry" rows above were not ported and are not pending work; they are 4.x engine assets. Treat live `tools/list` and the real route table as the only source of truth.
