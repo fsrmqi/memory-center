@@ -1,8 +1,8 @@
 # User Guide / 使用指南
 
-> **适用版本 / Version**：5.0.0b32。5.0 以独立常驻服务为唯一入口：管理页 `/admin/`、统一 MCP `/mcp` 与 `/api/v1/*` 管理 API 共用同一应用层（`memory-center` 命令只用于启动服务，没有子命令）。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。下方较早的版本记录保留作决策演进背景，不代表当前入口。
+> **适用版本 / Version**：5.0.0b33。5.0 以独立常驻服务为唯一入口：管理页 `/admin/`、统一 MCP `/mcp` 与 `/api/v1/*` 管理 API 共用同一应用层（`memory-center` 命令只用于启动服务，没有子命令）。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。下方较早的版本记录保留作决策演进背景，不代表当前入口。
 >
-> **Version**: 5.0.0b32. The resident service is the single entry point of 5.0: the `/admin/` UI, the unified `/mcp` endpoint and the `/api/v1/*` management API share one application layer (the `memory-center` command only launches the service and has no subcommands). See the [platform guide](V5_PLATFORM_GUIDE.md) for current contracts and the [CHANGELOG](CHANGELOG.md) for user-visible changes; older sections below are historical background only.
+> **Version**: 5.0.0b33. The resident service is the single entry point of 5.0: the `/admin/` UI, the unified `/mcp` endpoint and the `/api/v1/*` management API share one application layer (the `memory-center` command only launches the service and has no subcommands). See the [platform guide](V5_PLATFORM_GUIDE.md) for current contracts and the [CHANGELOG](CHANGELOG.md) for user-visible changes; older sections below are historical background only.
 
 
 > **当前入口 / Current entry**：`memory-center-service` 独立常驻服务，管理页 `/admin/`、MCP `/mcp`、项目目录 API `/api/v1/workspaces`。服务生命周期、状态与错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)；项目登记与管理见 [项目目录管理指南](V5_CATALOG_GUIDE.md)；17 个 MCP 工具与 4.x→5.0 迁移对照见 [MCP 接入指南](MCP_GUIDE.md)。

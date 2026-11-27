@@ -9,7 +9,7 @@ RUN npm run build
 
 FROM ${PYTHON_IMAGE} AS wheel
 WORKDIR /src
-COPY pyproject.toml MANIFEST.in README.md LICENSE requirements-service.lock ./
+COPY pyproject.toml MANIFEST.in README.md LICENSE NOTICE requirements-service.lock ./
 COPY memory_center/ memory_center/
 COPY docs/ docs/
 COPY --from=frontend /src/memory_center/service/static/ memory_center/service/static/

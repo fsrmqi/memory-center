@@ -9,31 +9,17 @@ Verifies:
 """
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
-import pytest
-
-
-@pytest.fixture()
-def demo_workspace(tmp_path: Path) -> Path:
-    source = Path("examples/spring-cloud-demo")
-    target = tmp_path / "demo"
-    shutil.copytree(source, target)
-    ws = target / ".memory-center" / "workspace.yaml"
-    lines = ws.read_text(encoding="utf-8").splitlines()
-    lines = [f"root: {target.as_posix()}" if line.startswith("root:") else line for line in lines]
-    ws.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
-    return ws
 
 class TestOnboardingPersona:
     PERSONAS = ["developer", "architect", "product", "tester"]
 
-    def test_all_personas_generate_tour(self, demo_workspace: Path):
+    def test_all_personas_generate_tour(self, demo_workspace_indexed: Path):
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.runtime import RuntimeStore
         from memory_center.core.storage.workspace import WorkspaceStore
-        ws = WorkspaceStore(str(demo_workspace))
+        ws = WorkspaceStore(str(demo_workspace_indexed))
         with RuntimeStore(ws.graph_db_path) as store:
             gen = ArchitectureTourGenerator(store)
             for persona in self.PERSONAS:
@@ -42,11 +28,11 @@ class TestOnboardingPersona:
                 assert tour.tour_id
                 assert isinstance(tour.steps, list)
 
-    def test_tour_has_required_fields(self, demo_workspace: Path):
+    def test_tour_has_required_fields(self, demo_workspace_indexed: Path):
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.runtime import RuntimeStore
         from memory_center.core.storage.workspace import WorkspaceStore
-        ws = WorkspaceStore(str(demo_workspace))
+        ws = WorkspaceStore(str(demo_workspace_indexed))
         with RuntimeStore(ws.graph_db_path) as store:
             gen = ArchitectureTourGenerator(store)
             tour = gen.generate_tour(persona="developer")
@@ -58,11 +44,11 @@ class TestOnboardingPersona:
             assert "summary" in d
             assert "total_steps" in d
 
-    def test_step_has_required_fields(self, demo_workspace: Path):
+    def test_step_has_required_fields(self, demo_workspace_indexed: Path):
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.runtime import RuntimeStore
         from memory_center.core.storage.workspace import WorkspaceStore
-        ws = WorkspaceStore(str(demo_workspace))
+        ws = WorkspaceStore(str(demo_workspace_indexed))
         with RuntimeStore(ws.graph_db_path) as store:
             gen = ArchitectureTourGenerator(store)
             tour = gen.generate_tour(persona="developer")
@@ -73,12 +59,12 @@ class TestOnboardingPersona:
                 assert "description" in s
                 assert "node_ids" in s
 
-    def test_persona_differences_meaningful(self, demo_workspace: Path):
+    def test_persona_differences_meaningful(self, demo_workspace_indexed: Path):
         """Different personas should produce different content, not just title swaps."""
         from memory_center.core.onboarding.tour import ArchitectureTourGenerator
         from memory_center.core.storage.runtime import RuntimeStore
         from memory_center.core.storage.workspace import WorkspaceStore
-        ws = WorkspaceStore(str(demo_workspace))
+        ws = WorkspaceStore(str(demo_workspace_indexed))
         with RuntimeStore(ws.graph_db_path) as store:
             gen = ArchitectureTourGenerator(store)
             tours = {}

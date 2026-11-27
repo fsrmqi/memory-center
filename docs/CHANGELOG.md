@@ -1,5 +1,14 @@
 # Changelog / 更新日志
 
+## 5.0.0b33 — 干净检出验证 / Clean checkout verification
+
+- 图谱及架构导览测试从临时示例工程构建索引，索引覆盖测试显式创建待跳过的示例资源。
+- 公开导出工具从环境变量读取可选的私有标识规则，匹配时仅输出文件路径。
+- 容器构建将第三方版权声明打入 wheel。
+- Graph and architecture tour tests index a temporary copy of the demo project. The coverage test creates its own sample resource to exercise skipped files.
+- The public export tool reads an optional private-marker pattern from the environment and reports matching file paths only.
+- The container build includes third-party notices in the wheel.
+
 ## 5.0.0b32 — 5.0 入口注册表与 4.x 逐条映射 / Entry registry and 4.x migration map
 
 ### 变更 / Changed

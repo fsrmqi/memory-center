@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 干净导出工具 / Clean export tool（可选，非日常发布必需）
 #
-# 本仓库是单一仓库且已公开，日常发布就是普通 `git push`，不需要本脚本。
+# 日常推送不需要本脚本。导出检查仅覆盖所选提交的源码树。
 # 本脚本用于两种场景：
 #   1) 给某次发布导出一棵不含内部资料的源码树（tarball / 只读快照）；
 #   2) 需要"再次从零起步"时，用干净树新建独立 git 历史（首个 commit 即公开历史）。
@@ -86,15 +86,20 @@ FAILED=0
 fail() { echo "  [FAIL] $*"; FAILED=$((FAILED + 1)); }
 ok() { echo "  [ ok ] $*"; }
 
-# 1) 私有标识与凭证模式
-BANNED='ucap|kaipuyun|开普云|cuijiaqi|javaworkspace|众包|预警发送'
-# 门禁脚本自身必然包含这些模式，扫描时排除。
-HITS="$(grep -rIn -E "$BANNED" "$TMP_DIR" --exclude-dir=.git --exclude=public_release.sh 2>/dev/null || true)"
-if [ -n "$HITS" ]; then
-  fail "命中私有标识 / private markers:"
-  printf '%s\n' "$HITS" | sed -n '1,20p' | sed 's/^/         /'
+# 1) 从源码树外读取可选的私有标识正则，输出仅包含命中文件名。
+if [ -n "${MEMORY_CENTER_RELEASE_PRIVATE_PATTERN:-}" ]; then
+  status=0
+  HITS="$(cd "$TMP_DIR" && grep -rIlE -e "$MEMORY_CENTER_RELEASE_PRIVATE_PATTERN" . 2>/dev/null)" || status=$?
+  if [ "$status" -eq 0 ]; then
+    fail "命中私有标识 / private markers:"
+    printf '%s\n' "$HITS" | sed -n '1,20p' | sed 's/^/         /'
+  elif [ "$status" -eq 1 ]; then
+    ok "私有标识 0 命中"
+  else
+    fail "私有标识扫描失败 / private marker scan failed"
+  fi
 else
-  ok "私有标识 0 命中"
+  echo "  [skip] 未配置私有标识正则 / no private marker pattern configured"
 fi
 
 # 1b) 家目录路径：允许测试里的占位用户名，只拦截真实用户名

@@ -1,11 +1,9 @@
 # 发布流程 / Publishing
 
-Memory Center **只有一个仓库**，它同时也是公开仓库。开发历史在首次公开时做过一次重写：
-公开面从一个干净的起始提交开始，此后所有提交都视为可公开内容。
+Memory Center 使用单一发布仓库。公开分支历史从一次整理后的源码快照开始，此后进入 `main` 的内容均按可公开标准审查。可见性以 GitHub 仓库设置为准。
 
-Memory Center uses **a single repository**, which is also the public one. Its history was
-rewritten once at the moment of open-sourcing: the public surface starts from a clean initial
-commit, and every commit after it is expected to be publishable.
+Memory Center uses one release repository. The publishable branch starts from a source snapshot,
+and every commit on `main` is reviewed for publication. GitHub repository settings control visibility.
 
 ## 为什么当初重写过一次历史 / Why the history was rewritten once
 
@@ -55,15 +53,19 @@ scripts/public_release.sh
 scripts/public_release.sh --keep --ref HEAD
 ```
 
-门禁包含：私有标识（工程名/公司名/真实用户名）、真实家目录、凭证模式、内部路径与示例生成物、
+门禁包含：可选的私有标识、真实家目录、凭证模式、内部路径与示例生成物、
 `LICENSE`/`NOTICE`/CI 等必备文件、Markdown 相对链接可解析、导出规模概览。任一项不通过则退出码 1，
 不影响工作区。
+
+维护者可在本地设置 `MEMORY_CENTER_RELEASE_PRIVATE_PATTERN`（扩展正则）以检查特定私有标识。规则值保存在源码树之外，命中时仅报告文件路径。
 
 `scripts/public_release.sh` remains available for exporting a clean source tarball or for
 starting a brand-new clean repository if that is ever needed. Regular commits and pushes do
 not use it; the `export-ignore` rules only apply when exporting.
 
 The dry run fails with exit code 1 when any gate trips and never touches the working tree.
+Set `MEMORY_CENTER_RELEASE_PRIVATE_PATTERN` locally to an extended regular expression for
+private identifiers. Keep the value outside the source tree. Only matching file paths are reported.
 
 ## 本地备份 / Local backup
 

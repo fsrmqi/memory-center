@@ -168,8 +168,17 @@ def test_not_published_blocks_everything():
 # ---------------------------------------------------------------------------
 
 
-def test_assemble_index_context_on_indexed_workspace(demo_workspace_str):
-    context = assemble_index_context(demo_workspace_str)
+def test_assemble_index_context_on_indexed_workspace(demo_workspace):
+    from memory_center.core.indexing.reindex import reindex_workspace
+    from memory_center.core.storage.workspace import WorkspaceStore
+    from memory_center.core.workspace.config import load_workspace_config
+
+    config = load_workspace_config(demo_workspace)
+    notes = demo_workspace.parent.parent / "article-service" / "notes.md"
+    notes.write_text("# Example resource\n", encoding="utf-8")
+    reindex_workspace(config, WorkspaceStore(demo_workspace))
+
+    context = assemble_index_context(str(demo_workspace))
     assert context["generation"]
     assert context["freshness"] == FRESH
     coverage = context["coverage"]
@@ -179,7 +188,8 @@ def test_assemble_index_context_on_indexed_workspace(demo_workspace_str):
     # Semantic calibration: demo's skipped files are irrelevant resources
     # (unsupported_syntax), so they must be audited as irrelevant_excluded and
     # NOT block a negative claim on coverage grounds.
-    assert coverage["irrelevant_excluded"] >= coverage["skipped_files"] or coverage["relevant_unsupported"] == 0
+    assert coverage["irrelevant_excluded"] > 0
+    assert coverage["relevant_unsupported"] == 0
     gate = evaluate_claim_boundary(context, result_count=0)
     assert "coverage_partial" not in gate["reason_codes"]
 
