@@ -1,6 +1,6 @@
 # 5.0 项目目录管理指南
 
-> **适用版本 / Version**：5.0.0b33。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。
+> **适用版本 / Version**：5.0.0b34。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。
 
 
 > 类型：操作与接口事实（current）。项目通过管理页 `http://127.0.0.1:8765/admin/` 或管理员 HTTP API 管理；项目 MCP 与授权随服务提供。

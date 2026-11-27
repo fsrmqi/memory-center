@@ -1,9 +1,9 @@
 # 5.0 服务运行指南
 
-> **适用版本 / Version**：5.0.0b33。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。
+> **适用版本 / Version**：5.0.0b34。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。
 
 
-> 类型：操作与接口事实（current）。适用版本：5.0.0b33（开发测试版本；不兼容 4.x 接入或历史数据导入）。
+> 类型：操作与接口事实（current）。适用版本：5.0.0b34（开发测试版本；不兼容 4.x 接入或历史数据导入）。
 
 ## 安装、启动与关闭
 
@@ -72,7 +72,7 @@ Dockerfile 不固定 CPU 平台，可为 Linux arm64/amd64 构建。发行矩阵
 | `/mcp` | 官方 SDK Streamable HTTP；支持 initialize、tools/list、tools/call、取消通知与 session 关闭 |
 | MCP `mc_service_status` | 无参数，只读；返回与状态 API 相同的结构化对象 |
 
-状态字段固定为 `schema_version="5.0"`、`version`（当前发行版本，如 `5.0.0b33`）、`stage`（预发布为 `development`，正式版为 `stable`）、`ready`、`capabilities` 与 `project_management`。`capabilities` 随版本增减，以实际响应为准。不返回服务目录或私有项目路径，不把未授权项目伪装为已登记项目。
+状态字段固定为 `schema_version="5.0"`、`version`（当前发行版本，如 `5.0.0b34`）、`stage`（预发布为 `development`，正式版为 `stable`）、`ready`、`capabilities` 与 `project_management`。`capabilities` 随版本增减，以实际响应为准。不返回服务目录或私有项目路径，不把未授权项目伪装为已登记项目。
 
 MCP 采用有状态传输以支持同一传输 session 的请求取消；传输 session 不代表 workspace、任务 session 或访问授权。SDK 子应用挂载在最后，FastAPI 外层 lifespan 显式管理 SDK session manager，避免子应用 lifespan 未执行。
 MCP Host/Origin 默认只允许 localhost、127.0.0.1、IPv6 回环及其端口形式，其他 Host 被拒绝（421）；无效 JSON-RPC、未知工具和协议错误使用 SDK 的错误合同。readiness 只说明服务可接收请求，不说明项目索引健康。

@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from memory_center.core.indexing.parallel import (
     estimate_optimal_workers,
     parse_files_parallel,
@@ -31,9 +33,11 @@ def test_estimate_scales_with_cpu_for_medium_batches() -> None:
     assert estimate_optimal_workers(50) >= 2
 
 
-def test_estimate_respects_max_cap() -> None:
-    """A huge file count must still be capped at the explicit max."""
-    assert estimate_optimal_workers(10_000, max_workers=6) == 6
+@pytest.mark.parametrize(("cpu_count", "expected"), [(2, 4), (8, 6)])
+def test_estimate_respects_max_cap(monkeypatch, cpu_count: int, expected: int) -> None:
+    """A large batch must respect both the CPU estimate and the explicit cap."""
+    monkeypatch.setattr("memory_center.core.indexing.parallel.os.cpu_count", lambda: cpu_count)
+    assert estimate_optimal_workers(10_000, max_workers=6) == expected
 
 
 def test_estimate_does_not_exceed_file_count() -> None:

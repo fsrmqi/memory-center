@@ -1,6 +1,6 @@
 # Memory Center / 记忆中心
 
-> **当前版本 5.0.0b33（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
+> **当前版本 5.0.0b34（开发测试版）** — 一次安装、常驻运行的多项目上下文与记忆服务。
 >
 > 入口：服务 `memory-center-service`（`memory-center` 现指向同一服务）、stdio 代理 `memory-center-mcp`、维护 `memory-center-maintenance`、宿主集成 `memory-center-integrations`。地址：管理页 `/admin/`、就绪 `/health/ready`、MCP `/mcp`。
 >
@@ -67,11 +67,11 @@ Memory Center precomputes these relationships before the agent starts editing.
 
 ### Current release / 当前版本
 
-当前包版本为 **5.0.0b33**（开发测试版）。Memory Center 已重构为常驻服务：多项目登记、统一 MCP 入口、后台索引、知识库 / Wiki / 长期记忆与知识治理 / Skill 管理全部由同一服务承载，入口与能力边界以 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md) 为准。
+当前包版本为 **5.0.0b34**（开发测试版）。Memory Center 已重构为常驻服务：多项目登记、统一 MCP 入口、后台索引、知识库 / Wiki / 长期记忆与知识治理 / Skill 管理全部由同一服务承载，入口与能力边界以 [5.0 平台指南](docs/V5_PLATFORM_GUIDE.md) 为准。
 
 4.x 的稳定能力（可信查询、Java IR 差分、跨服务调用链、检索回放、发布质量门禁）作为核心算法背景保留；5.0 实际复用其中哪些部分，由平台指南与代码事实定义，不以本文的历史叙述为准。4.6.30 保留在 `codex/release-4.6.30` 分支供源码追溯，5.0 不读取其 workspace、registry、索引与记忆。
 
-The current package version is **5.0.0b33** (development beta). Memory Center now runs as a standalone always-on service hosting multi-project registration, a unified MCP endpoint, background indexing, knowledge/Wiki/long-term memory, and knowledge/skill governance. The 4.x engine capabilities are retained as algorithmic background; which parts the 5.0 service actually reuses is defined by the platform guide and the code, not by this historical narrative.
+The current package version is **5.0.0b34** (development beta). Memory Center now runs as a standalone always-on service hosting multi-project registration, a unified MCP endpoint, background indexing, knowledge/Wiki/long-term memory, and knowledge/skill governance. The 4.x engine capabilities are retained as algorithmic background; which parts the 5.0 service actually reuses is defined by the platform guide and the code, not by this historical narrative.
 
 ---
 
@@ -1621,7 +1621,7 @@ Mutation examples: `POST /workspace/asset/register`, `POST /workspace/artifact/u
 
 ## Documentation Status / 文档状态
 
-5.0 采用全新安装策略：重新登记源码项目、重新建立索引和记忆，不导入旧 workspace 或保留 4.x 接口兼容层。当前包版本为 5.0.0b33，已提供独立常驻服务、项目目录 API、管理页、项目 MCP 与后台索引；历史数据清理由用户自行处理。运行架构为 FastAPI/Uvicorn 模块化单体、官方 Python MCP SDK、Vue 管理页面、SQLite 与有界进程 Worker。
+5.0 采用全新安装策略：重新登记源码项目、重新建立索引和记忆，不导入旧 workspace 或保留 4.x 接口兼容层。当前包版本为 5.0.0b34，已提供独立常驻服务、项目目录 API、管理页、项目 MCP 与后台索引；历史数据清理由用户自行处理。运行架构为 FastAPI/Uvicorn 模块化单体、官方 Python MCP SDK、Vue 管理页面、SQLite 与有界进程 Worker。
 
 5.0 以 **5.0.0** 为目标发行版：从 4.x 引擎改造为独立常驻服务、多项目接入与管理页面，并扩展文档知识库、Wiki 和长期记忆。项目操作见 [项目目录管理指南](docs/V5_CATALOG_GUIDE.md)，运行事实见 [5.0 服务运行指南](docs/V5_SERVICE_GUIDE.md)，架构决策见 [ADR-0004](docs/adr/0004-service-platform-and-admin.md)。原有 CLI/MCP/HTTP 源码暂留用于后续能力拆分，不提供兼容承诺。
 

@@ -1,5 +1,10 @@
 # Changelog / 更新日志
 
+## 5.0.0b34 — 跨机器 CI 验证 / Portable CI checks
+
+- 索引 worker 和项目调度测试显式设定 CPU 预算，覆盖 2 核运行器和配置上限。
+- Worker estimation and job scheduling tests use deterministic CPU budgets to cover 2-core runners and configured limits.
+
 ## 5.0.0b33 — 干净检出验证 / Clean checkout verification
 
 - 图谱及架构导览测试从临时示例工程构建索引，索引覆盖测试显式创建待跳过的示例资源。

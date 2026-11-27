@@ -63,7 +63,9 @@ def test_settings_validation_and_queue_idempotency(service):
         platform.jobs.cancel(job['id'])
 
 
-def test_scheduler_starts_configured_number_and_finds_old_queue(tmp_path, monkeypatch):
+@pytest.mark.parametrize(("cpu_budget", "expected"), [(2, 2), (4, 3)])
+def test_scheduler_starts_configured_number_and_finds_old_queue(tmp_path, monkeypatch, cpu_budget, expected):
+    monkeypatch.setattr('memory_center.platform.jobs.cpu_budget', lambda: cpu_budget)
     db = Database(tmp_path); db.initialize(); store = PlatformStore(db)
     workspaces = {f'w{i}': {'workspace_id': f'w{i}', 'status': 'active', 'config_version': 1} for i in range(5)}
     jobs = Jobs(store, SimpleNamespace(get=lambda key: workspaces[key]), tmp_path)
@@ -74,21 +76,33 @@ def test_scheduler_starts_configured_number_and_finds_old_queue(tmp_path, monkey
     with db.connection(True) as connection:
         for i in range(1001):
             store._put(connection, 'job', {'id': f'history{i}', 'status': 'succeeded', 'revision': 1})
-    class Process:
-        alive = False
-        def __init__(self, **kwargs): pass
-        def start(self): self.alive = True
-        def is_alive(self): return self.alive
-        def terminate(self): self.alive = False
-        def join(self, *args, **kwargs): pass
-        def close(self): pass
-    monkeypatch.setattr('multiprocessing.get_context', lambda *_: SimpleNamespace(Process=Process))
     async def exercise():
+        started = asyncio.Event()
+        starts = 0
+
+        class Process:
+            alive = False
+            def __init__(self, **kwargs): pass
+            def start(self):
+                nonlocal starts
+                self.alive = True
+                starts += 1
+                if starts == expected:
+                    started.set()
+            def is_alive(self): return self.alive
+            def terminate(self): self.alive = False
+            def join(self, *args, **kwargs): pass
+            def close(self): pass
+
+        monkeypatch.setattr('multiprocessing.get_context', lambda *_: SimpleNamespace(Process=Process))
         task = asyncio.create_task(jobs.loop())
-        await asyncio.sleep(.1)
-        assert len(jobs.processes) == 3
-        assert len([j for j in jobs.pending() if j['status'] == 'queued']) == 2
-        jobs.stopping = True
-        await task
-        await jobs.close()
+        try:
+            await asyncio.wait_for(started.wait(), timeout=5)
+            assert len(jobs.processes) == expected
+            assert len([j for j in jobs.pending() if j['status'] == 'queued']) == 5 - expected
+        finally:
+            jobs.stopping = True
+            await task
+            await jobs.close()
+
     asyncio.run(exercise())

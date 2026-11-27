@@ -1,8 +1,8 @@
 # Reference / 参考手册
 
-> **适用版本 / Version**：5.0.0b33。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。4.x 引擎的命令、参数与 schema 保留作兼容参考，不代表 5.0 服务入口；以代码、`--help`、路由与 MCP schema 为准。
+> **适用版本 / Version**：5.0.0b34。当前入口与合同见 [5.0 平台指南](V5_PLATFORM_GUIDE.md)，用户可感知的变化见 [CHANGELOG](CHANGELOG.md)。4.x 引擎的命令、参数与 schema 保留作兼容参考，不代表 5.0 服务入口；以代码、`--help`、路由与 MCP schema 为准。
 >
-> **Version**: 5.0.0b33. See the [platform guide](V5_PLATFORM_GUIDE.md) for current entry points and the [CHANGELOG](CHANGELOG.md) for user-visible changes. Legacy 4.x command/parameter references are kept as compatibility background only; code, `--help`, routes and MCP schema are authoritative.
+> **Version**: 5.0.0b34. See the [platform guide](V5_PLATFORM_GUIDE.md) for current entry points and the [CHANGELOG](CHANGELOG.md) for user-visible changes. Legacy 4.x command/parameter references are kept as compatibility background only; code, `--help`, routes and MCP schema are authoritative.
 
 
 > **当前入口 / Current entry**：`memory-center-service` 独立常驻服务，管理页 `/admin/`、MCP `/mcp`、项目目录 API `/api/v1/workspaces`。服务生命周期、状态与错误合同、安装与关闭见 [5.0 服务运行指南](V5_SERVICE_GUIDE.md)；项目登记与管理见 [项目目录管理指南](V5_CATALOG_GUIDE.md)。下文 4.x CLI/HTTP 参考属于保留的引擎能力，不构成 5.0 兼容承诺。
